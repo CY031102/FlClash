@@ -46,7 +46,7 @@ class PanelApi {
     final authData = data?['auth_data'];
     final url =
         (authData is String ? await _subscribeUrl(authData) : null) ??
-        '$panelApiBase/api/v1/client/subscribe?token=$token';
+        '$panelSubscribeBase/api/v1/client/subscribe?token=$token';
     return withSubscribeFlag(url);
   }
 
