@@ -67,11 +67,28 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # Logs need a sign-in; annotations and the job summary are public, so the
+      # errors are copied there.
       - name: Analyze
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          flutter analyze --no-fatal-infos --no-fatal-warnings 2>&1 | Tee-Object -FilePath analyze.txt
+          $code = $LASTEXITCODE
+          $errors = Get-Content analyze.txt | Where-Object { $_ -match '^\s*error\b' }
+          $errors | Select-Object -First 20 | ForEach-Object { Write-Output "::error title=analyze::$($_.Trim())" }
+          "### Analyze (exit $code)`n``````n$(($errors | Select-Object -First 80) -join "`n")`n``````" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          exit $code
 
       - name: Build installer and zip
-        run: dart setup.dart windows --env stable
+        shell: pwsh
+        run: |
+          dart setup.dart windows --env stable 2>&1 | Tee-Object -FilePath build.txt
+          $code = $LASTEXITCODE
+          $errors = Get-Content build.txt | Where-Object { $_ -match '(?i)\berror\b|exception|failed' }
+          $errors | Select-Object -First 20 | ForEach-Object { Write-Output "::error title=build::$($_.Trim())" }
+          "### Build (exit $code)`n``````n$(((Get-Content build.txt) | Select-Object -Last 120) -join "`n")`n``````" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          exit $code
 
       - name: Upload build
         uses: actions/upload-artifact@v4
