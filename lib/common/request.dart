@@ -106,6 +106,8 @@ class Request {
 
   /// Null when this build is current; throws when GitHub cannot be asked.
   Future<Map<String, dynamic>?> checkForUpdate() async {
+    // The upstream FlClash releases are not this build's updates.
+    if (!brandUpdatesEnabled) return null;
     final release = await latestRelease();
     final remoteVersion = release['tag_name'] as String;
     final version = globalState.packageInfo.version;

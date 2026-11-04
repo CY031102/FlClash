@@ -1,19 +1,7 @@
 name: pages
 
+# Publishes the upstream FlClash site; manual only in this fork.
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'site/**'
-      - 'tool/build_site.sh'
-      - 'tool/render_site.mjs'
-      - '.github/workflows/pages.yaml'
-  workflow_run:
-    workflows:
-      - build
-    types:
-      - completed
   workflow_dispatch:
 
 permissions:

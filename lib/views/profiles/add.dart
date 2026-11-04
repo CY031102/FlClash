@@ -6,6 +6,7 @@ import 'package:fl_clash/pages/scan.dart';
 import 'package:fl_clash/plugins/app.dart';
 import 'package:fl_clash/providers/providers.dart';
 import 'package:fl_clash/ui/icons/icons.dart';
+import 'package:fl_clash/views/account/login.dart';
 import 'package:fl_clash/views/profiles/custom/custom.dart';
 import 'package:fl_clash/widgets/widgets.dart';
 import 'package:flutter/widgets.dart';
@@ -131,6 +132,11 @@ class AddProfileMenu extends ConsumerWidget {
       targetBuilder: builder,
       popupBuilder: (_) => PopupMenu(
         items: [
+          PopupMenuItem(
+            glyph: AppGlyphs.account,
+            label: '账号登录',
+            onPressed: () => unawaited(showPanelLogin(ref)),
+          ),
           PopupMenuItem(
             glyph: AppGlyphs.qrCode,
             label: appLocalizations.qrcode,

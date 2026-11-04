@@ -1,11 +1,7 @@
 name: build
 
+# Upstream CI, kept for manual runs; atcskylink-windows.yaml builds releases.
 on:
-  push:
-    branches:
-      - '**'
-    tags:
-      - 'v*'
   workflow_dispatch:
 
 concurrency:

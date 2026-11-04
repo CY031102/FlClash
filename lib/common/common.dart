@@ -2,6 +2,8 @@ export 'app_localizations.dart';
 export 'app_ports.dart';
 export 'app_update.dart';
 export 'backup.dart';
+export 'brand.dart';
+export 'panel_api.dart';
 export 'changelog.dart';
 export 'cidr.dart';
 export 'compute.dart';
