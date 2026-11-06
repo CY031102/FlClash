@@ -3,6 +3,7 @@ import 'dart:io';
 import 'proxy_platform_interface.dart';
 import 'src/linux_proxy.dart';
 import 'src/macos_proxy.dart';
+import 'src/pac_server.dart';
 import 'src/proxy_command.dart';
 import 'src/windows_proxy.dart';
 
@@ -45,6 +46,7 @@ class Proxy {
       'windows' => await ProxyPlatform.instance.startProxy(
         port,
         windowsBypassList(bypassDomain),
+        pacUrl: await PacServer.instance.serve(port, bypassDomain),
       ),
       String() => false,
     };

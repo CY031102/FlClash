@@ -36,8 +36,27 @@ class PanelApi {
     }
   }
 
-  /// Signs in and returns the subscription link to import.
-  Future<String> login(String email, String password) async {
+  /// Whether the panel says this account is banned; null when it cannot be
+  /// asked (offline, blocked, or the credential no longer works).
+  Future<bool?> isBanned(String authData) async {
+    try {
+      final res = await _dio.get<dynamic>(
+        '/api/v1/user/info',
+        options: Options(headers: {'Authorization': authData}),
+      );
+      final banned = _dataOf(res.data)?['banned'];
+      return banned == true || banned == 1 || banned == '1';
+    } on DioException {
+      return null;
+    }
+  }
+
+  /// Signs in; returns the subscription link to import and the credential
+  /// later calls on the user's behalf need.
+  Future<({String url, String? authData})> login(
+    String email,
+    String password,
+  ) async {
     final Map<String, dynamic>? data;
     try {
       final res = await _dio.post<dynamic>(
@@ -57,7 +76,10 @@ class PanelApi {
     final url =
         (authData is String ? await _subscribeUrl(authData) : null) ??
         '$panelSubscribeBase/api/v1/client/subscribe?token=$token';
-    return withSubscribeFlag(url);
+    return (
+      url: withSubscribeFlag(url),
+      authData: authData is String ? authData : null,
+    );
   }
 
   /// The panel's own link is preferred: its subscribe host can differ from

@@ -91,8 +91,11 @@ class ApplicationState extends ConsumerState<Application> {
   }
 
   void _promptLoginWhenEmpty() {
-    if (ref.read(profilesProvider).isNotEmpty) return;
-    openLoginGate();
+    if (ref.read(profilesProvider).isNotEmpty) {
+      openLaunchFlight();
+    } else {
+      openLoginGate();
+    }
   }
 
   void _initLink() {

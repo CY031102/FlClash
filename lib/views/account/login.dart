@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'boarding_pass_login.dart';
 
 const _lastAccountKey = 'panelLastAccount';
+const _authDataKey = 'panelAuthData';
 
 const panelForgotPasswordUrl = '$panelApiBase/#/forgetPassword';
 
@@ -54,5 +55,29 @@ Future<void> saveLastPanelAccount(String email, {required bool remember}) async 
     }
   } catch (e) {
     commonPrint.log('save last account: $e');
+  }
+}
+
+/// Kept in app preferences for now; moving it under DPAPI is listed for later.
+Future<String?> loadPanelAuthData() async {
+  try {
+    final preferences = await SharedPreferences.getInstance();
+    return preferences.getString(_authDataKey);
+  } catch (e) {
+    commonPrint.log('load auth data: $e');
+    return null;
+  }
+}
+
+Future<void> savePanelAuthData(String? authData) async {
+  try {
+    final preferences = await SharedPreferences.getInstance();
+    if (authData == null) {
+      await preferences.remove(_authDataKey);
+    } else {
+      await preferences.setString(_authDataKey, authData);
+    }
+  } catch (e) {
+    commonPrint.log('save auth data: $e');
   }
 }

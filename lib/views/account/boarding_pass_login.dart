@@ -20,7 +20,19 @@ import 'logo_data.dart';
 /// profile, and when the user chooses to sign in from the profiles page.
 final loginGateVisible = ValueNotifier<bool>(false);
 
-void openLoginGate() => loginGateVisible.value = true;
+/// Set before opening: a signed-in user's launch plays the flight straight
+/// away while the account is checked, instead of asking for a sign-in.
+bool _launchFlight = false;
+
+void openLoginGate() {
+  _launchFlight = false;
+  loginGateVisible.value = true;
+}
+
+void openLaunchFlight() {
+  _launchFlight = true;
+  loginGateVisible.value = true;
+}
 
 class LoginGate extends StatelessWidget {
   const LoginGate({super.key, required this.child});
@@ -112,19 +124,55 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
 
   bool _loginDone = false;
   String? _loginFailure;
+  bool _banned = false;
+  late final bool _launch = _launchFlight;
   Duration _flyAt = Duration.zero;
   Duration _hoverAt = Duration.zero;
   PlanePose? _crashPose;
 
   bool get _busy => _phase != _Phase.idle;
 
-  bool get _canClose => ref.read(profilesProvider).isNotEmpty;
+  bool get _canClose => !_banned && ref.read(profilesProvider).isNotEmpty;
 
   @override
   void initState() {
     super.initState();
     unawaited(_loadAccount());
     unawaited(_checkServer());
+    if (_launch) {
+      _run();
+      _flyAt = _now;
+      _ink.reset();
+      _go(_Phase.fly);
+      unawaited(_verifyLaunch());
+    }
+  }
+
+  /// Only a ban keeps a signed-in user out; offline, blocked or an answer
+  /// that does not come lets them in on the subscription they already have.
+  Future<void> _verifyLaunch() async {
+    final authData = await loadPanelAuthData();
+    final banned = authData == null
+        ? null
+        : await _api.isBanned(authData).timeout(
+            const Duration(seconds: 6),
+            onTimeout: () => null,
+          );
+    if (banned == true) {
+      _banned = true;
+      _loginFailure = '此帳號已被停用，請聯繫客服';
+      return;
+    }
+    _loginDone = true;
+    final profile = ref.read(currentProfileProvider);
+    if (banned != null && profile != null) {
+      unawaited(ref.read(profilesActionProvider.notifier).updateProfile(profile));
+    }
+  }
+
+  void _skipFlight() {
+    if (_phase != _Phase.fly) return;
+    _flyAt = _now - FlightPlan.duration - const Duration(milliseconds: 20);
   }
 
   Future<void> _loadAccount() async {
@@ -267,6 +315,7 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
       _badField = 0;
       _loginDone = false;
       _loginFailure = null;
+      _banned = false;
     });
     FocusManager.instance.primaryFocus?.unfocus();
     unawaited(_signIn(_email.text.trim(), _password.text));
@@ -292,9 +341,10 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
 
   Future<void> _signIn(String email, String password) async {
     try {
-      final url = await _api.login(email, password);
+      final signedIn = await _api.login(email, password);
       await saveLastPanelAccount(email, remember: _remember);
-      await importPanelSubscription(ref, url);
+      await savePanelAuthData(signedIn.authData);
+      await importPanelSubscription(ref, signedIn.url);
       ref.read(currentPageLabelProvider.notifier).value = PageLabel.dashboard;
       _loginDone = true;
     } on PanelLoginException catch (e) {
@@ -509,6 +559,23 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
                       child: IgnorePointer(
                         child: CustomPaint(
                           painter: _BlobPainter(tear, reach * blob),
+                        ),
+                      ),
+                    ),
+                  if (_launch && _phase == _Phase.fly)
+                    Positioned.fill(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _skipFlight,
+                        child: Align(
+                          alignment: const Alignment(0, 0.92),
+                          child: Text(
+                            '點一下畫面跳過',
+                            style: _style(
+                              AppTextStyle.caption1,
+                              _C.bg.withValues(alpha: 0.6),
+                            ),
+                          ),
                         ),
                       ),
                     ),

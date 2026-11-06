@@ -168,6 +168,48 @@ bool startProxy(const int port, const flutter::EncodableList& bypassDomain)
   return optionsApplied && settingsNotified;
 }
 
+std::optional<int> ProxyPort(const std::wstring& server);
+
+// The script is served by the app: once the app is gone Windows cannot
+// fetch it and connects directly.
+bool startPacProxy(const std::wstring& pacUrl)
+{
+  std::wstring url = pacUrl;
+  std::vector<INTERNET_PER_CONN_OPTION> options(2);
+
+  INTERNET_PER_CONN_OPTION_LIST list = {};
+  list.dwSize = sizeof(list);
+  list.dwOptionCount = static_cast<DWORD>(options.size());
+  list.pOptions = options.data();
+
+  options[0].dwOption = INTERNET_PER_CONN_FLAGS;
+  options[0].Value.dwValue = PROXY_TYPE_DIRECT | PROXY_TYPE_AUTO_PROXY_URL;
+
+  options[1].dwOption = INTERNET_PER_CONN_AUTOCONFIG_URL;
+  options[1].Value.pszValue = url.data();
+
+  const bool optionsApplied = ApplyOptionsToConnections(list);
+  const bool settingsNotified = NotifySettingsChanged();
+  return optionsApplied && settingsNotified;
+}
+
+// "http://127.0.0.1:<port>/atcskylink.pac?..." is ours; anything else is not.
+std::optional<int> PacPort(const std::wstring& url)
+{
+  const std::wstring prefix = L"http://127.0.0.1:";
+  const std::wstring path = L"/atcskylink.pac";
+  if (url.compare(0, prefix.size(), prefix) != 0)
+  {
+    return std::nullopt;
+  }
+  const auto slash = url.find(L'/', prefix.size());
+  if (slash == std::wstring::npos || url.compare(slash, path.size(), path) != 0)
+  {
+    return std::nullopt;
+  }
+  return ProxyPort(L"127.0.0.1:" + url.substr(prefix.size(), slash - prefix.size()));
+}
+
 bool stopProxy()
 {
   std::vector<INTERNET_PER_CONN_OPTION> options(1);
@@ -280,9 +322,10 @@ bool ClearStaleProxyForConnection(
     LPTSTR connection,
     std::map<int, bool>& releasedPorts)
 {
-  std::vector<INTERNET_PER_CONN_OPTION> options(2);
+  std::vector<INTERNET_PER_CONN_OPTION> options(3);
   options[0].dwOption = INTERNET_PER_CONN_FLAGS;
   options[1].dwOption = INTERNET_PER_CONN_PROXY_SERVER;
+  options[2].dwOption = INTERNET_PER_CONN_AUTOCONFIG_URL;
 
   INTERNET_PER_CONN_OPTION_LIST list = {};
   list.dwSize = sizeof(list);
@@ -305,8 +348,18 @@ bool ClearStaleProxyForConnection(
     GlobalFree(options[1].Value.pszValue);
   }
 
-  const auto port = ProxyPort(server);
-  if ((flags & PROXY_TYPE_PROXY) == 0 || !port)
+  std::wstring pacUrl;
+  if (options[2].Value.pszValue != nullptr)
+  {
+    pacUrl = options[2].Value.pszValue;
+    GlobalFree(options[2].Value.pszValue);
+  }
+  const auto pacPort = (flags & PROXY_TYPE_AUTO_PROXY_URL) != 0
+                           ? PacPort(pacUrl)
+                           : std::nullopt;
+  const auto port = (flags & PROXY_TYPE_PROXY) != 0 ? ProxyPort(server)
+                                                     : pacPort;
+  if (!port)
   {
     return true;
   }
@@ -321,7 +374,8 @@ bool ClearStaleProxyForConnection(
   }
   INTERNET_PER_CONN_OPTION option = {};
   option.dwOption = INTERNET_PER_CONN_FLAGS;
-  option.Value.dwValue = (flags & ~PROXY_TYPE_PROXY) | PROXY_TYPE_DIRECT;
+  const DWORD ours = pacPort ? PROXY_TYPE_AUTO_PROXY_URL : PROXY_TYPE_PROXY;
+  option.Value.dwValue = (flags & ~ours) | PROXY_TYPE_DIRECT;
   list.dwOptionCount = 1;
   list.pOptions = &option;
   return SetOptionsForConnection(list, connection);
@@ -444,7 +498,13 @@ namespace proxy
       }
       // A start that reports failure can still have written the setting.
       proxy_applied_ = true;
-      result->Success(startProxy(*port, *bypassDomain));
+      auto pacIt = arguments->find(flutter::EncodableValue("pacUrl"));
+      const auto *pacUrl = pacIt == arguments->end()
+                               ? nullptr
+                               : std::get_if<std::string>(&pacIt->second);
+      result->Success(pacUrl != nullptr && !pacUrl->empty()
+                          ? startPacProxy(Utf8ToWide(*pacUrl))
+                          : startProxy(*port, *bypassDomain));
     }
     else
     {

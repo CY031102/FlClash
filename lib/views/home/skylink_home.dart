@@ -320,6 +320,7 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
     for (final profile in [...ref.read(profilesProvider)]) {
       await profilesAction.deleteProfile(profile.id);
     }
+    await savePanelAuthData(null);
     openLoginGate();
   }
 

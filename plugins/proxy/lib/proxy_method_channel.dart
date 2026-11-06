@@ -11,10 +11,15 @@ class MethodChannelProxy extends ProxyPlatform {
   final methodChannel = const MethodChannel('proxy');
 
   @override
-  Future<bool> startProxy(int port, List<String> bypassDomain) async {
+  Future<bool> startProxy(
+    int port,
+    List<String> bypassDomain, {
+    String? pacUrl,
+  }) async {
     return await methodChannel.invokeMethod<bool>(_startProxyMethod, {
           'port': port,
           'bypassDomain': bypassDomain,
+          'pacUrl': ?pacUrl,
         }) ??
         false;
   }
