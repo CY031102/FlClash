@@ -134,8 +134,8 @@ class AddProfileMenu extends ConsumerWidget {
         items: [
           PopupMenuItem(
             glyph: AppGlyphs.account,
-            label: '账号登录',
-            onPressed: () => unawaited(showPanelLogin(ref)),
+            label: '帳號登入',
+            onPressed: () => showPanelLogin(ref),
           ),
           PopupMenuItem(
             glyph: AppGlyphs.qrCode,

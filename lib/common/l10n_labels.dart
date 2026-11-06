@@ -132,6 +132,7 @@ extension LocaleL10n on Locale {
       'ko' => appLocalizations.ko,
       'ru' => appLocalizations.ru,
       'zh_CN' => appLocalizations.zhCN,
+      'zh_TW' => '繁體中文',
       final code => code,
     };
   }

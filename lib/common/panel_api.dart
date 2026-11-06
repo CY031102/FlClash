@@ -26,6 +26,16 @@ class PanelApi {
 
   final Dio _dio;
 
+  /// Whether the panel answers at all, for the sign-in screen's status light.
+  Future<bool> ping() async {
+    try {
+      final res = await _dio.get<dynamic>('/api/v1/guest/comm/config');
+      return (res.statusCode ?? 0) < 400;
+    } on DioException catch (e) {
+      return (e.response?.statusCode ?? 600) < 500;
+    }
+  }
+
   /// Signs in and returns the subscription link to import.
   Future<String> login(String email, String password) async {
     final Map<String, dynamic>? data;
@@ -41,7 +51,7 @@ class PanelApi {
     }
     final token = data?['token'];
     if (token is! String || token.isEmpty) {
-      throw const PanelLoginException('登录失败：服务器没有返回订阅信息');
+      throw const PanelLoginException('登入失敗：伺服器沒有回傳訂閱資訊');
     }
     final authData = data?['auth_data'];
     final url =
@@ -96,18 +106,31 @@ class PanelApi {
   static String _messageOf(DioException e) {
     final response = e.response;
     if (response == null) {
-      return '无法连接服务器，请检查网络';
+      return '無法連線到伺服器，請檢查網路';
     }
     final decoded = _decode(response.data);
     if (decoded is Map) {
       final message = decoded['message'];
       if (message is String && message.isNotEmpty) {
-        return message;
+        return _traditional(message);
       }
     }
     if (response.statusCode == 500) {
-      return '邮箱或密码错误';
+      return '電子郵件或密碼錯誤';
     }
-    return '登录失败（${response.statusCode ?? '未知错误'}）';
+    return '登入失敗（${response.statusCode ?? '未知錯誤'}）';
+  }
+
+  /// V2Board answers in Simplified Chinese; the common sign-in replies are
+  /// shown in Traditional, anything else as the panel wrote it.
+  static String _traditional(String message) {
+    if (message.contains('次数')) return '密碼錯誤次數過多，請稍後再試';
+    if (message.contains('密码') || message.contains('邮箱')) {
+      return '電子郵件或密碼錯誤';
+    }
+    if (message.contains('停止使用') || message.contains('封禁')) {
+      return '此帳號已被停用';
+    }
+    return message;
   }
 }

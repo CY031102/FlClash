@@ -14,7 +14,7 @@ import 'package:fl_clash/plugins/app.dart';
 import 'package:fl_clash/providers/providers.dart';
 import 'package:fl_clash/state.dart';
 import 'package:fl_clash/ui/ui.dart';
-import 'package:fl_clash/views/account/login.dart';
+import 'package:fl_clash/views/account/boarding_pass_login.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
@@ -89,7 +89,7 @@ class ApplicationState extends ConsumerState<Application> {
 
   void _promptLoginWhenEmpty() {
     if (ref.read(profilesProvider).isNotEmpty) return;
-    unawaited(showPanelLogin(ref));
+    openLoginGate();
   }
 
   void _initLink() {
@@ -177,11 +177,11 @@ class ApplicationState extends ConsumerState<Application> {
               isDesktop: system.isDesktop,
               onConnectivityChanged: _handleConnectivityChanged,
               terminateSignals: _terminateSignals,
-              child: child!,
+              child: LoginGate(child: child!),
             );
           },
           title: appName,
-          locale: getLocaleForString(locale),
+          locale: getLocaleForString(locale) ?? const Locale('zh', 'TW'),
           supportedLocales: AppLocalizations.delegate.supportedLocales,
           themeMode: themeProps.themeMode,
           theme: watchAppTheme(ref, Brightness.light),

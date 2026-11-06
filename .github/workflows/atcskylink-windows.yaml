@@ -75,6 +75,10 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # arb/intl_zh_TW.arb has no committed generated code; this writes it.
+      - name: Generate localizations
+        run: dart run intl_utils:generate
+
       # Logs need a sign-in; annotations and the job summary are public, so the
       # errors are copied there.
       - name: Analyze
