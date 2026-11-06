@@ -8,6 +8,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      panel_url:
+        description: 'Test build: panel address, e.g. http://172.232.162.202:7001 (leave empty for production)'
+        required: false
+        default: ''
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -17,6 +22,9 @@ permissions:
   contents: write
 
 env:
+  # Set only on a manual run that names a test panel.
+  PANEL_URL: ${{ inputs.panel_url }}
+  BUILD_SUFFIX: ${{ inputs.panel_url != '' && '-TEST' || '' }}
   FLUTTER_VERSION: '3.47.6'
   GO_VERSION: '1.27.1'
 
@@ -90,17 +98,25 @@ jobs:
           "### Build (exit $code)`n``````n$(((Get-Content build.txt) | Select-Object -Last 120) -join "`n")`n``````" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           exit $code
 
+      - name: Mark test build
+        if: env.BUILD_SUFFIX != ''
+        shell: pwsh
+        run: |
+          Get-ChildItem dist -Recurse -Include *.exe,*.zip |
+            Rename-Item -NewName { $_.BaseName + $env:BUILD_SUFFIX + $_.Extension }
+          "### Test build for $env:PANEL_URL" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
       - name: Upload build
         uses: actions/upload-artifact@v4
         with:
-          name: ATCSkylink-windows
+          name: ATCSkylink-windows${{ env.BUILD_SUFFIX }}
           path: |
             dist/**/*.exe
             dist/**/*.zip
           if-no-files-found: error
 
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && env.BUILD_SUFFIX == ''
         uses: softprops/action-gh-release@v2
         with:
           files: |

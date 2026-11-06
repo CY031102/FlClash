@@ -124,8 +124,18 @@ List<String> createFlutterBuildArgs({
   return flutterBuildArgs;
 }
 
+/// Panel overrides reach the app as dart-defines; unset ones are left out so
+/// the app keeps its production defaults.
+const _panelDefineKeys = ['PANEL_URL', 'PANEL_SUBSCRIBE_URL'];
+
 Map<String, String> createBuildEnvironment(String env) {
-  return {'APP_ENV': env};
+  return {
+    'APP_ENV': env,
+    for (final key in _panelDefineKeys)
+      if (Platform.environment[key]?.trim() case final value?
+          when value.isNotEmpty)
+        key: value,
+  };
 }
 
 /// Packages whose build hook `pubspec.yaml` turns into a no-op.

@@ -126,7 +126,7 @@ class _PanelLoginDialogState extends State<PanelLoginDialog> {
     final colorScheme = context.colorScheme;
     final error = _error;
     return AlertDialog(
-      title: '登录 $brandName',
+      title: isTestPanel ? '登录 $brandName（测试服）' : '登录 $brandName',
       hasFields: true,
       actions: [
         TextButton(
