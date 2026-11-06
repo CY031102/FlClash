@@ -59,6 +59,7 @@ class WindowPlugin : public flutter::Plugin {
   void HandleSetBounds(const flutter::EncodableMap* args, std::unique_ptr<Result> result);
   void HandleIsPositionSupported(const flutter::EncodableMap* args, std::unique_ptr<Result> result);
   void HandleSetMinimumSize(const flutter::EncodableMap* args, std::unique_ptr<Result> result);
+  void HandleSetFixedSize(const flutter::EncodableMap* args, std::unique_ptr<Result> result);
   void HandleIsAlwaysOnTop(const flutter::EncodableMap* args, std::unique_ptr<Result> result);
   void HandleSetAlwaysOnTop(const flutter::EncodableMap* args, std::unique_ptr<Result> result);
   void HandleSetTitleBarStyle(const flutter::EncodableMap* args, std::unique_ptr<Result> result);

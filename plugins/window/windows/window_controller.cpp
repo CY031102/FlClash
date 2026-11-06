@@ -248,6 +248,15 @@ void WindowController::SetBounds(std::optional<double> x,
   ::SetWindowPos(hwnd_, nullptr, ix, iy, iw, ih, flags);
 }
 
+void WindowController::SetFixedSize(double width, double height) {
+  SetMinimumSize(width, height);
+  fixed_size_ = minimum_size_.x != 0 && minimum_size_.y != 0;
+  if (hwnd_ != nullptr) {
+    const LONG_PTR style = ::GetWindowLongPtrW(hwnd_, GWL_STYLE);
+    ::SetWindowLongPtrW(hwnd_, GWL_STYLE, style & ~WS_MAXIMIZEBOX);
+  }
+}
+
 void WindowController::SetMinimumSize(double width, double height) {
   minimum_size_ = (width >= 0 && height >= 0)
                       ? POINT{static_cast<LONG>(width),
@@ -326,6 +335,10 @@ std::optional<LRESULT> WindowController::HandleWindowMessage(
       info->ptMinTrackSize.x = static_cast<LONG>(minimum_size_.x * scale);
     if (minimum_size_.y != 0)
       info->ptMinTrackSize.y = static_cast<LONG>(minimum_size_.y * scale);
+    if (fixed_size_) {
+      info->ptMaxTrackSize = info->ptMinTrackSize;
+      info->ptMaxSize = info->ptMinTrackSize;
+    }
     return 0;
   } else if (message == WM_NCACTIVATE) {
     emit_event_(wparam != 0 ? "focus" : "blur");
@@ -387,6 +400,16 @@ std::optional<LRESULT> WindowController::HandleWindowMessage(
     ::EndPaint(hwnd, &paint);
     return 0;
   } else if (message == WM_NCHITTEST) {
+    if (fixed_size_) {
+      const LRESULT edge = ::DefWindowProcW(hwnd, message, wparam, lparam);
+      switch (edge) {
+        case HTLEFT: case HTRIGHT: case HTTOP: case HTBOTTOM:
+        case HTTOPLEFT: case HTTOPRIGHT: case HTBOTTOMLEFT: case HTBOTTOMRIGHT:
+          return HTCLIENT;
+        default:
+          return edge;
+      }
+    }
     const LONG border = TopBorderHeight();
     if (border == 0) {
       return std::nullopt;

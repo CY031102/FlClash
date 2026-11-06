@@ -62,6 +62,7 @@ class WindowController {
   void SetBounds(std::optional<double> x, std::optional<double> y,
                  std::optional<double> width, std::optional<double> height);
   void SetMinimumSize(double width, double height);
+  void SetFixedSize(double width, double height);
 
   bool IsAlwaysOnTop() const;
   void SetAlwaysOnTop(bool value);
@@ -96,6 +97,7 @@ class WindowController {
   WindowState last_state_ = WindowState::kNormal;
   bool is_prevent_close_ = false;
   POINT minimum_size_{0, 0};
+  bool fixed_size_ = false;
 
   bool is_fullscreen_ = false;
   FullScreenSavedState fullscreen_saved_;

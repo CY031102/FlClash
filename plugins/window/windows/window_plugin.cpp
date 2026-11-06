@@ -134,6 +134,7 @@ void WindowPlugin::BuildHandlerTable() {
   handlers_["setBounds"] = &WindowPlugin::HandleSetBounds;
   handlers_["isPositionSupported"] = &WindowPlugin::HandleIsPositionSupported;
   handlers_["setMinimumSize"] = &WindowPlugin::HandleSetMinimumSize;
+  handlers_["setFixedSize"] = &WindowPlugin::HandleSetFixedSize;
   handlers_["isAlwaysOnTop"] = &WindowPlugin::HandleIsAlwaysOnTop;
   handlers_["setAlwaysOnTop"] = &WindowPlugin::HandleSetAlwaysOnTop;
   handlers_["setTitleBarStyle"] = &WindowPlugin::HandleSetTitleBarStyle;
@@ -269,6 +270,18 @@ void WindowPlugin::HandleSetBounds(const flutter::EncodableMap* args,
 void WindowPlugin::HandleIsPositionSupported(const flutter::EncodableMap*,
                                              std::unique_ptr<Result> result) {
   result->Success(flutter::EncodableValue(true));
+}
+
+void WindowPlugin::HandleSetFixedSize(const flutter::EncodableMap* args,
+                                      std::unique_ptr<Result> result) {
+  const auto width = GetDouble(args, "width");
+  const auto height = GetDouble(args, "height");
+  if (!width.has_value() || !height.has_value()) {
+    result->Error("bad_args", "setFixedSize: width/height");
+    return;
+  }
+  controller_.SetFixedSize(*width, *height);
+  result->Success();
 }
 
 void WindowPlugin::HandleSetMinimumSize(const flutter::EncodableMap* args,

@@ -174,6 +174,11 @@ class DesktopWindow {
 
   Future<void> center() => setAlignment(Alignment.center);
 
+  /// Neither resizable nor maximizable at [size].
+  Future<void> setFixedSize(Size size) {
+    return _call('setFixedSize', {'width': size.width, 'height': size.height});
+  }
+
   Future<void> setMinimumSize(Size size) {
     return _call('setMinimumSize', {
       'width': size.width,

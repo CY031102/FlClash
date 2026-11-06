@@ -10,6 +10,9 @@ import 'package:flutter/widgets.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window/window.dart';
 
+/// One fixed window: the app has nothing that needs more room.
+const skylinkWindowSize = Size(640, 420);
+
 class Window implements WindowPort {
   static const _tintOpacity = 0.5;
   static Window? _instance;
@@ -34,16 +37,6 @@ class Window implements WindowPort {
   }
 
   Future<void> init(int version, WindowProps props) async {
-    if (!safeModeBuild) {
-      if (system.isWindows) {
-        for (final scheme in protocolSchemes) {
-          protocol.register(scheme);
-        }
-      }
-      if (system.isLinux) {
-        unawaited(protocol.registerLinux(protocolSchemes));
-      }
-    }
     await desktopWindow.ensureInitialized();
     _supportsPosition = !system.isMacOS;
     if (system.isLinux) {
@@ -52,8 +45,8 @@ class Window implements WindowPort {
     if (!system.isMacOS || version > 10) {
       await desktopWindow.setTitleBarStyle(TitleBarStyle.hidden);
     }
-    await desktopWindow.setSize(props.savedSize ?? await _defaultSize());
-    await desktopWindow.setMinimumSize(const Size(380, 400));
+    await desktopWindow.setSize(skylinkWindowSize);
+    await desktopWindow.setFixedSize(skylinkWindowSize);
     await _windowPosition(props);
     await desktopWindow.setPreventClose(true);
   }

@@ -1,0 +1,889 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:math' as math;
+
+import 'package:fl_clash/common/common.dart';
+import 'package:fl_clash/enum/enum.dart';
+import 'package:fl_clash/models/models.dart';
+import 'package:fl_clash/providers/providers.dart';
+import 'package:fl_clash/views/account/boarding_pass_login.dart';
+import 'package:fl_clash/views/account/flight_plan.dart';
+import 'package:fl_clash/views/account/logo_data.dart';
+import 'package:fl_clash/views/account/login.dart';
+import 'package:fl_clash/widgets/widgets.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+abstract final class _C {
+  static const bg = Color(0xFF191D2B);
+  static const surface = Color(0xFF252B3E);
+  static const surfaceHi = Color(0xFF323A52);
+  static const text = Color(0xFFF3F5FA);
+  static const muted = Color(0xFF8C95AD);
+  static const faint = Color(0xFF646C85);
+  static const accent = Color(0xFF3DB4F2);
+  static const danger = Color(0xFFFF6B7E);
+  static const success = Color(0xFF35D39A);
+  static const warning = Color(0xFFF2B84B);
+}
+
+/// easeInOutSine: every transition on this screen moves on it.
+const _calm = Cubic(0.37, 0, 0.63, 1);
+
+enum _Link { off, connecting, connected, trouble }
+
+/// The whole app for its users: one switch that, on, reaches Google.
+class SkylinkHome extends ConsumerStatefulWidget {
+  const SkylinkHome({super.key});
+
+  @override
+  ConsumerState<SkylinkHome> createState() => _SkylinkHomeState();
+}
+
+class _SkylinkHomeState extends ConsumerState<SkylinkHome>
+    with SingleTickerProviderStateMixin {
+  static const _probeUrl = 'https://www.google.com/generate_204';
+  static const _probeEvery = Duration(seconds: 30);
+
+  late final Ticker _ticker = createTicker(_tick);
+  final _plane = parseOutline(logoPlanePath);
+  double _seconds = 0;
+  double _drift = 0;
+
+  _Link _link = _Link.off;
+  Timer? _probeTimer;
+  int _probeRun = 0;
+  int _failures = 0;
+  bool _toggling = false;
+
+  bool _menuOpen = false;
+  bool _nodesOpen = false;
+  String? _tip;
+  Timer? _tipTimer;
+  String _initial = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker.start();
+    unawaited(_loadInitial());
+    ref.listenManual(isStartProvider, (_, running) => _onRunning(running));
+    if (ref.read(isStartProvider)) _onRunning(true);
+  }
+
+  Future<void> _loadInitial() async {
+    final email = await loadLastPanelAccount();
+    if (mounted && email != null && email.isNotEmpty) {
+      setState(() => _initial = email.characters.first.toUpperCase());
+    }
+  }
+
+  @override
+  void dispose() {
+    _ticker.dispose();
+    _probeTimer?.cancel();
+    _tipTimer?.cancel();
+    super.dispose();
+  }
+
+  void _tick(Duration elapsed) {
+    final next = elapsed.inMicroseconds / 1e6;
+    final dt = next - _seconds;
+    _seconds = next;
+    final target = _link == _Link.connected ? 1.0 : 0.0;
+    final step = dt / 1.6;
+    _drift = target > _drift
+        ? math.min(target, _drift + step)
+        : math.max(target, _drift - step);
+    final moving =
+        _drift > 0 || _link == _Link.connecting || _link == _Link.connected;
+    if (moving) setState(() {});
+  }
+
+  void _onRunning(bool running) {
+    _probeTimer?.cancel();
+    _probeRun++;
+    if (!running) {
+      setState(() => _link = _Link.off);
+      return;
+    }
+    setState(() => _link = _Link.connecting);
+    _failures = 0;
+    unawaited(_probe(_probeRun));
+  }
+
+  /// Through our own proxy, so "connected" means the user can reach Google.
+  Future<void> _probe(int run) async {
+    final port = ref.read(patchClashConfigProvider).mixedPort;
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 6)
+      ..findProxy = (_) => 'PROXY 127.0.0.1:$port';
+    var ok = false;
+    try {
+      final request = await client
+          .getUrl(Uri.parse(_probeUrl))
+          .timeout(const Duration(seconds: 8));
+      final response = await request.close().timeout(
+        const Duration(seconds: 8),
+      );
+      await response.drain<void>();
+      ok = response.statusCode < 400;
+    } catch (e) {
+      commonPrint.log('probe: $e');
+    } finally {
+      client.close(force: true);
+    }
+    if (!mounted || run != _probeRun || !ref.read(isStartProvider)) return;
+    if (ok) {
+      final wasConnecting = _link == _Link.connecting;
+      _failures = 0;
+      setState(() => _link = _Link.connected);
+      if (wasConnecting) _showTip('已確認可以打開 Google');
+      _probeTimer = Timer(_probeEvery, () => unawaited(_probe(run)));
+      return;
+    }
+    _failures++;
+    final giveUp = _link == _Link.connecting ? _failures >= 3 : _failures >= 2;
+    if (giveUp) {
+      setState(() => _link = _Link.trouble);
+    }
+    _probeTimer = Timer(
+      Duration(seconds: _link == _Link.connected ? 5 : 4),
+      () => unawaited(_probe(run)),
+    );
+  }
+
+  Future<void> _toggle() async {
+    if (_toggling) return;
+    if (_blocked != null) {
+      _showTip(_blocked!);
+      return;
+    }
+    _toggling = true;
+    setState(() {
+      _menuOpen = false;
+      _nodesOpen = false;
+      if (!ref.read(isStartProvider)) _link = _Link.connecting;
+    });
+    try {
+      ref.read(commonActionProvider.notifier).toggleRunning();
+    } finally {
+      _toggling = false;
+    }
+  }
+
+  void _showTip(String text) {
+    _tipTimer?.cancel();
+    setState(() => _tip = text);
+    _tipTimer = Timer(const Duration(milliseconds: 2600), () {
+      if (mounted) setState(() => _tip = null);
+    });
+  }
+
+  SubscriptionInfo? get _info =>
+      ref.read(currentProfileProvider.select((p) => p?.subscriptionInfo));
+
+  bool get _expired {
+    final info = _info;
+    if (info == null || info.expire == 0) return false;
+    return DateTime.fromMillisecondsSinceEpoch(
+      info.expire * 1000,
+    ).isBefore(DateTime.now());
+  }
+
+  bool get _outOfData {
+    final info = _info;
+    if (info == null || info.total == 0) return false;
+    return info.upload + info.download >= info.total;
+  }
+
+  String? get _blocked {
+    if (ref.read(currentProfileProvider) == null) return '請先登入';
+    if (_expired) return '套餐已過期，續費後即可使用';
+    if (_outOfData) return '流量已用完，續費後即可使用';
+    return null;
+  }
+
+  String _accountLine() {
+    final info = _info;
+    if (info == null) return '';
+    final parts = <String>[];
+    if (info.expire > 0) {
+      final end = DateTime.fromMillisecondsSinceEpoch(info.expire * 1000);
+      if (end.isBefore(DateTime.now())) {
+        parts.add('已於 ${end.month} 月 ${end.day} 日到期');
+      } else {
+        final days = end.difference(DateTime.now()).inHours / 24;
+        parts.add(days < 1 ? '今天到期' : '${days.ceil()} 天後到期');
+      }
+    }
+    if (info.total > 0) {
+      final left = math.max(0, info.total - info.upload - info.download);
+      parts.add('還剩 ${_size(left)}');
+    }
+    return parts.join(' · ');
+  }
+
+  static String _size(int bytes) {
+    const gb = 1024 * 1024 * 1024;
+    if (bytes >= gb) return '${(bytes / gb).floor()} GB';
+    return '${(bytes / (1024 * 1024)).floor()} MB';
+  }
+
+  ({String text, Color color})? _alert() {
+    final info = _info;
+    if (info == null) return null;
+    if (_expired) return (text: '套餐已過期', color: _C.danger);
+    if (_outOfData) return (text: '流量已用完', color: _C.danger);
+    if (info.total > 0) {
+      final left = info.total - info.upload - info.download;
+      if (left < info.total * 0.1) {
+        return (text: '流量只剩 ${_size(left)}', color: _C.warning);
+      }
+    }
+    if (info.expire > 0) {
+      final days = DateTime.fromMillisecondsSinceEpoch(
+        info.expire * 1000,
+      ).difference(DateTime.now()).inHours / 24;
+      if (days <= 3) {
+        return (text: '套餐 ${days.ceil()} 天後到期', color: _C.warning);
+      }
+    }
+    return null;
+  }
+
+  Group? get _global => ref
+      .read(groupsProvider)
+      .where((g) => g.name == GroupName.GLOBAL.name)
+      .firstOrNull;
+
+  static const _notNodes = {
+    'Direct',
+    'Reject',
+    'RejectDrop',
+    'Pass',
+    'Compatible',
+    'Selector',
+    'URLTest',
+    'Fallback',
+    'LoadBalance',
+    'Relay',
+  };
+
+  List<Proxy> _nodes() => [
+    for (final p in _global?.all ?? const <Proxy>[])
+      if (!_notNodes.contains(p.type)) p,
+  ];
+
+  String _nodeLine() {
+    final global = _global;
+    final now = global?.now;
+    if (now == null || now.isEmpty) return '自動';
+    final picked = global!.all.where((p) => p.name == now).firstOrNull;
+    if (picked != null && _notNodes.contains(picked.type)) {
+      final inner = picked.now;
+      final region = inner == null ? null : regionOf(inner);
+      return region == null ? '自動' : '$region · 自動';
+    }
+    return now;
+  }
+
+  void _pickNode(String name) {
+    setState(() => _nodesOpen = false);
+    ref
+        .read(proxiesActionProvider.notifier)
+        .changeProxyDebounce(GroupName.GLOBAL.name, name);
+    _showTip('已固定使用「$name」');
+  }
+
+  void _pickAuto() {
+    setState(() => _nodesOpen = false);
+    final auto = _global?.all
+        .where((p) => p.type == 'URLTest' || p.type == 'Fallback')
+        .firstOrNull;
+    if (auto != null) {
+      ref
+          .read(proxiesActionProvider.notifier)
+          .changeProxyDebounce(GroupName.GLOBAL.name, auto.name);
+    }
+    _showTip('自動選擇');
+  }
+
+  Future<void> _logout() async {
+    setState(() => _menuOpen = false);
+    if (ref.read(isStartProvider)) {
+      await ref.read(setupActionProvider.notifier).setRunning(false);
+    }
+    final profilesAction = ref.read(profilesActionProvider.notifier);
+    for (final profile in [...ref.read(profilesProvider)]) {
+      await profilesAction.deleteProfile(profile.id);
+    }
+    openLoginGate();
+  }
+
+  void _openSite(String path) {
+    setState(() => _menuOpen = false);
+    unawaited(dialogs.openUrl('$panelApiBase/#/$path'));
+  }
+
+  TextStyle _style(AppTextStyle s, Color color, {bool strong = false}) =>
+      s.of(context, emphasized: strong).copyWith(color: color);
+
+  @override
+  Widget build(BuildContext context) {
+    ref.watch(currentProfileProvider);
+    ref.watch(groupsProvider);
+    final link = _link;
+    final blocked = _blocked;
+    final alert = _alert();
+    final status = switch (link) {
+      _ when blocked != null && link == _Link.off => '無法連線',
+      _Link.off => '未連線',
+      _Link.connecting => '連線中…',
+      _Link.connected => '已連線',
+      _Link.trouble => '連線異常',
+    };
+    final dotColor = _expired || _outOfData ? _C.danger : _C.success;
+    return ColoredBox(
+      color: _C.bg,
+      child: DefaultTextStyle(
+        style: _style(AppTextStyle.subheadline, _C.text),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () {
+                  if (_menuOpen || _nodesOpen) {
+                    setState(() => _menuOpen = _nodesOpen = false);
+                  }
+                },
+              ),
+            ),
+            Positioned(
+              left: 22,
+              top: 14,
+              child: Text(
+                brandName,
+                style: _style(AppTextStyle.headline, _C.text, strong: true),
+              ),
+            ),
+            Positioned(
+              right: 18,
+              top: 10,
+              child: _Avatar(
+                initial: _initial,
+                dot: dotColor,
+                onTap: () => setState(() {
+                  _nodesOpen = false;
+                  _menuOpen = !_menuOpen;
+                }),
+              ),
+            ),
+            Align(
+              alignment: const Alignment(0, -0.05),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _Switch(
+                    link: link,
+                    disabled: blocked != null,
+                    seconds: _seconds,
+                    drift: _drift,
+                    plane: _plane,
+                    onTap: () => unawaited(_toggle()),
+                  ),
+                  const SizedBox(height: 22),
+                  Text(
+                    status,
+                    style: _style(
+                      AppTextStyle.title2,
+                      link == _Link.trouble ? _C.warning : _C.text,
+                      strong: true,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _Pressable(
+                    onTap: () => setState(() {
+                      _menuOpen = false;
+                      _nodesOpen = !_nodesOpen;
+                    }),
+                    child: Text(
+                      '${_nodeLine()}  ›',
+                      style: _style(AppTextStyle.footnote, _C.muted),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _accountLine(),
+                    style: _style(AppTextStyle.caption1, _C.faint),
+                  ),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    height: 34,
+                    child: alert == null
+                        ? null
+                        : _Pill(
+                            text: alert.text,
+                            action: '續費 →',
+                            color: alert.color,
+                            onTap: () => _openSite('plan'),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 14,
+              child: AnimatedOpacity(
+                opacity: _tip == null ? 0 : 1,
+                duration: const Duration(milliseconds: 400),
+                curve: _calm,
+                child: Text(
+                  _tip ?? '',
+                  textAlign: TextAlign.center,
+                  style: _style(AppTextStyle.caption1, _C.faint),
+                ),
+              ),
+            ),
+            if (_menuOpen)
+              Positioned(
+                right: 16,
+                top: 48,
+                width: 170,
+                child: _Panel(
+                  children: [
+                    _MenuRow('方案與續費', onTap: () => _openSite('plan')),
+                    _MenuRow('客服', onTap: () => _openSite('ticket')),
+                    _MenuRow(
+                      '登出',
+                      color: _C.danger,
+                      onTap: () => unawaited(_logout()),
+                    ),
+                  ],
+                ),
+              ),
+            if (_nodesOpen)
+              Align(
+                alignment: const Alignment(0, -0.4),
+                child: SizedBox(
+                  width: 300,
+                  child: _NodeList(
+                    nodes: _nodes(),
+                    current: _global?.now,
+                    onAuto: _pickAuto,
+                    onPick: _pickNode,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// "香港 01" → 香港; names the panel gives in Chinese, English or flags.
+String? regionOf(String name) {
+  const regions = {
+    '香港': ['香港', 'HK', 'Hong Kong', '🇭🇰'],
+    '台灣': ['台灣', '台湾', 'TW', 'Taiwan', '🇹🇼'],
+    '日本': ['日本', 'JP', 'Japan', '🇯🇵'],
+    '新加坡': ['新加坡', 'SG', 'Singapore', '🇸🇬'],
+    '韓國': ['韓國', '韩国', 'KR', 'Korea', '🇰🇷'],
+    '美國': ['美國', '美国', 'US', 'United States', '🇺🇸'],
+    '英國': ['英國', '英国', 'UK', 'GB', '🇬🇧'],
+    '德國': ['德國', '德国', 'DE', 'Germany', '🇩🇪'],
+    '加拿大': ['加拿大', 'CA', 'Canada', '🇨🇦'],
+  };
+  for (final MapEntry(:key, :value) in regions.entries) {
+    for (final word in value) {
+      final latin = RegExp(r'^[A-Za-z ]+$').hasMatch(word);
+      final hit = latin
+          ? RegExp('(^|[^A-Za-z])${RegExp.escape(word)}([^A-Za-z]|\$)')
+                .hasMatch(name)
+          : name.contains(word);
+      if (hit) return key;
+    }
+  }
+  return null;
+}
+
+class _Switch extends StatelessWidget {
+  const _Switch({
+    required this.link,
+    required this.disabled,
+    required this.seconds,
+    required this.drift,
+    required this.plane,
+    required this.onTap,
+  });
+
+  final _Link link;
+  final bool disabled;
+  final double seconds;
+  final double drift;
+  final Path plane;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final on = link == _Link.connected || link == _Link.trouble;
+    final busy = link == _Link.connecting;
+    final fill = on ? _C.accent : _C.surface;
+    final glow = on ? 0.03 * math.sin(seconds * 2 * math.pi / 11) : 0.0;
+    final breathe = busy ? (math.sin(seconds * 2 * math.pi / 1.6) + 1) / 2 : 0.0;
+    final ringColor = on || busy ? _C.accent : _C.surfaceHi;
+    final planeColor = on ? _C.bg : (busy ? _C.accent : _C.muted);
+    return MouseRegion(
+      cursor: disabled
+          ? SystemMouseCursors.forbidden
+          : SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Opacity(
+          opacity: disabled ? 0.55 : 1,
+          child: SizedBox.square(
+            dimension: 140,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Transform.scale(
+                  scale: 1 + 0.1 * breathe,
+                  child: Opacity(
+                    opacity: busy ? 1 - 0.65 * breathe : 1,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 900),
+                      curve: _calm,
+                      width: 140,
+                      height: 140,
+                      decoration: ShapeDecoration(
+                        shape: CircleBorder(
+                          side: BorderSide(color: ringColor, width: 2),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 900),
+                  curve: _calm,
+                  width: 128,
+                  height: 128,
+                  decoration: ShapeDecoration(
+                    color: Color.lerp(
+                      fill,
+                      glow >= 0 ? const Color(0xFFFFFFFF) : _C.bg,
+                      glow.abs(),
+                    ),
+                    shape: AppShape.circle,
+                  ),
+                ),
+                CustomPaint(
+                  size: const Size.square(58),
+                  painter: _PlanePainter(
+                    plane: plane,
+                    color: planeColor,
+                    offset: _driftOffset(seconds) * drift,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Along the wings, never turning: two slow sines whose periods never line
+  /// up, so the drift does not visibly repeat.
+  static Offset _driftOffset(double t) {
+    final heading = logoPlaneHeadingDegrees * math.pi / 180;
+    final wing = Offset(-math.sin(heading), math.cos(heading));
+    final d =
+        1.7 * math.sin(t * 2 * math.pi / 6) +
+        0.8 * math.sin(t * 2 * math.pi / 9.4 + math.pi);
+    return wing * d;
+  }
+}
+
+class _PlanePainter extends CustomPainter {
+  const _PlanePainter({
+    required this.plane,
+    required this.color,
+    required this.offset,
+  });
+
+  final Path plane;
+  final Color color;
+  final Offset offset;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bounds = plane.getBounds();
+    final scale = size.width / bounds.longestSide;
+    canvas
+      ..translate(offset.dx, offset.dy)
+      ..translate(
+        (size.width - bounds.width * scale) / 2,
+        (size.height - bounds.height * scale) / 2,
+      )
+      ..scale(scale)
+      ..translate(-bounds.left, -bounds.top)
+      ..drawPath(plane, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_PlanePainter old) =>
+      old.color != color || old.offset != offset;
+}
+
+class _Avatar extends StatelessWidget {
+  const _Avatar({required this.initial, required this.dot, required this.onTap});
+
+  final String initial;
+  final Color dot;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Pressable(
+      onTap: onTap,
+      child: SizedBox.square(
+        dimension: 30,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: const ShapeDecoration(
+                  color: _C.surface,
+                  shape: AppShape.circle,
+                ),
+                child: Center(
+                  child: Text(
+                    initial,
+                    style: AppTextStyle.footnote
+                        .of(context, emphasized: true)
+                        .copyWith(color: _C.muted),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              right: -1,
+              bottom: -1,
+              child: Container(
+                width: 11,
+                height: 11,
+                decoration: ShapeDecoration(
+                  color: dot,
+                  shape: const CircleBorder(
+                    side: BorderSide(color: _C.bg, width: 2),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Pressable extends StatelessWidget {
+  const _Pressable({required this.onTap, required this.child});
+
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: child,
+      ),
+    );
+  }
+}
+
+class _Pill extends StatelessWidget {
+  const _Pill({
+    required this.text,
+    required this.action,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String text;
+  final String action;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = AppTextStyle.footnote.of(context).copyWith(color: color);
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        color: _C.surface,
+        shape: AppShape.all(17),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(text, style: style),
+            const SizedBox(width: 12),
+            _Pressable(
+              onTap: onTap,
+              child: Text(
+                action,
+                style: style.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Panel extends StatelessWidget {
+  const _Panel({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: ShapeDecoration(color: _C.surface, shape: AppShape.all(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: children,
+        ),
+      ),
+    );
+  }
+}
+
+class _MenuRow extends StatelessWidget {
+  const _MenuRow(this.text, {required this.onTap, this.color = _C.text});
+
+  final String text;
+  final VoidCallback onTap;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Pressable(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        child: Text(
+          text,
+          style: AppTextStyle.footnote.of(context).copyWith(color: color),
+        ),
+      ),
+    );
+  }
+}
+
+class _NodeList extends StatelessWidget {
+  const _NodeList({
+    required this.nodes,
+    required this.current,
+    required this.onAuto,
+    required this.onPick,
+  });
+
+  final List<Proxy> nodes;
+  final String? current;
+  final VoidCallback onAuto;
+  final ValueChanged<String> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    final header = AppTextStyle.caption2
+        .of(context)
+        .copyWith(color: _C.muted, letterSpacing: 1);
+    final row = AppTextStyle.footnote.of(context);
+    final byRegion = <String, List<Proxy>>{};
+    for (final node in nodes) {
+      byRegion.putIfAbsent(regionOf(node.name) ?? '其他', () => []).add(node);
+    }
+    Widget title(String text) => Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 3),
+      child: Text(text, style: header),
+    );
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 280),
+      child: _Panel(
+        children: [
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  title('推薦'),
+                  _Pressable(
+                    onTap: onAuto,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '自動選擇',
+                              style: row.copyWith(color: _C.text),
+                            ),
+                          ),
+                          Text(
+                            '同地區優先',
+                            style: row.copyWith(color: _C.accent),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  for (final MapEntry(key: region, value: list)
+                      in byRegion.entries) ...[
+                    title(region),
+                    for (final node in list)
+                      _Pressable(
+                        onTap: () => onPick(node.name),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          child: Text(
+                            node.name,
+                            style: row.copyWith(
+                              color: node.name == current ? _C.accent : _C.text,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

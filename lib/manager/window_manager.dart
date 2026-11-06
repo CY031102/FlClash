@@ -405,7 +405,7 @@ class _WindowHeaderState extends ConsumerState<WindowHeader> {
       height: kHeaderHeight,
       backdropOpacity: backdropOpacity,
       onDragStart: desktopWindow.startDragging,
-      onDoubleTap: caption.toggleMaximized,
+      onDoubleTap: () {},
       title: system.isMacOS ? const Text(appName) : null,
       actions: system.isMacOS
           ? null
@@ -531,48 +531,13 @@ class WindowHeaderActions extends StatelessWidget {
     return ValueListenableBuilder(
       valueListenable: state,
       builder: (_, state, _) {
-        final (maximizeGlyph, maximizeTooltip) = switch (state) {
-          WindowCaptionState(isFullScreen: true) => (
-            CaptionGlyph.restore,
-            appLocalizations.exitFullScreen,
-          ),
-          WindowCaptionState(isMaximized: true) => (
-            CaptionGlyph.restore,
-            appLocalizations.unmaximize,
-          ),
-          _ => (CaptionGlyph.maximize, appLocalizations.maximize),
-        };
         return Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            AspectRatio(
-              aspectRatio: 1,
-              child: IconButton(
-                tooltip: state.isPinned
-                    ? appLocalizations.unpinWindow
-                    : appLocalizations.pinWindow,
-                style: const ButtonStyle(
-                  shape: AppShape.circle,
-                  minimumSize: Size.zero,
-                  maximumSize: Size.infinite,
-                  iconSize: pinIconSize,
-                ),
-                onPressed: onPin,
-                icon: AnimatedGlyph(
-                  glyph: AppGlyphs.pin,
-                  filled: state.isPinned,
-                ),
-              ),
-            ),
             IconButton(
               tooltip: appLocalizations.minimize,
               onPressed: onMinimize,
               icon: const CaptionIcon(CaptionGlyph.minimize),
-            ),
-            IconButton(
-              tooltip: maximizeTooltip,
-              onPressed: onMaximize,
-              icon: CaptionIcon(maximizeGlyph),
             ),
             IconButton(
               tooltip: appLocalizations.close,

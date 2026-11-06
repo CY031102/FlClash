@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:fl_clash/bootstrap.dart';
 import 'package:fl_clash/common/common.dart';
+import 'package:fl_clash/common/skylink_policy.dart';
 import 'package:fl_clash/common/system_dns.dart';
 import 'package:fl_clash/common/window.dart';
 import 'package:fl_clash/enum/enum.dart';
@@ -15,6 +16,7 @@ import 'package:fl_clash/providers/providers.dart';
 import 'package:fl_clash/state.dart';
 import 'package:fl_clash/ui/ui.dart';
 import 'package:fl_clash/views/account/boarding_pass_login.dart';
+import 'package:fl_clash/views/home/skylink_home.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
@@ -80,6 +82,7 @@ class ApplicationState extends ConsumerState<Application> {
       }
       _autoUpdateProfilesTask();
       _initLink();
+      unawaited(applySkylinkPolicy(ref));
       _promptLoginWhenEmpty();
       if (!safeModeBuild) {
         unawaited(app?.initShortcuts());
@@ -205,7 +208,7 @@ class ApplicationState extends ConsumerState<Application> {
           ),
         );
       },
-      child: const HomePage(),
+      child: const SkylinkHome(),
     );
   }
 
