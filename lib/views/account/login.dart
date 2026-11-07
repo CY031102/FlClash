@@ -8,6 +8,7 @@ import 'boarding_pass_login.dart';
 
 const _lastAccountKey = 'panelLastAccount';
 const _authDataKey = 'panelAuthData';
+const _fullFlightKey = 'fullFlightShown';
 
 const panelForgotPasswordUrl = '$panelApiBase/#/forgetPassword';
 
@@ -79,5 +80,26 @@ Future<void> savePanelAuthData(String? authData) async {
     }
   } catch (e) {
     commonPrint.log('save auth data: $e');
+  }
+}
+
+/// The full drawing plays on a computer's first sign-in only; later sign-ins
+/// and launches get the short flight.
+Future<bool> loadFullFlightShown() async {
+  try {
+    final preferences = await SharedPreferences.getInstance();
+    return preferences.getBool(_fullFlightKey) ?? false;
+  } catch (e) {
+    commonPrint.log('load full flight: $e');
+    return false;
+  }
+}
+
+Future<void> markFullFlightShown() async {
+  try {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(_fullFlightKey, true);
+  } catch (e) {
+    commonPrint.log('save full flight: $e');
   }
 }

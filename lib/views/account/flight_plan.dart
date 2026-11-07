@@ -31,7 +31,15 @@ class PlanePose {
 /// and is smoothed over time, so the plane never whips round a tight loop;
 /// it slows where the line turns and the pen presses harder there.
 class FlightPlan {
-  FlightPlan._(this.length, this.xs, this.ys, this.widths, this._s, this._a);
+  FlightPlan._(
+    this.length,
+    this.xs,
+    this.ys,
+    this.widths,
+    this.headings,
+    this._s,
+    this._a,
+  );
 
   static const step = 2.0;
   static const fps = 60;
@@ -49,13 +57,16 @@ class FlightPlan {
   final Float64List xs;
   final Float64List ys;
   final Float64List widths;
+
+  /// Radians, the line's broad direction at each sample, unwrapped.
+  final Float64List headings;
   final Float64List _s;
   final Float64List _a;
 
   int get sampleCount => xs.length;
   int get frameCount => _s.length - 1;
 
-  static double get _heading => logoPlaneHeadingDegrees * math.pi / 180;
+  static double get heading => logoPlaneHeadingDegrees * math.pi / 180;
 
   static Path linePath() {
     final p = <Offset>[
@@ -139,7 +150,7 @@ class FlightPlan {
       }
       smoothed[f] = sv / sw;
     }
-    return FlightPlan._(length, xs, ys, _penWidths(k, length), s, smoothed);
+    return FlightPlan._(length, xs, ys, _penWidths(k, length), h, s, smoothed);
   }
 
   static Float64List _penWidths(Float64List k, double length) {
@@ -198,8 +209,8 @@ class FlightPlan {
     }
     final e = s - length;
     return Offset(
-      xs.last + math.cos(_heading) * e,
-      ys.last + math.sin(_heading) * e,
+      xs.last + math.cos(heading) * e,
+      ys.last + math.sin(heading) * e,
     );
   }
 
@@ -211,9 +222,14 @@ class FlightPlan {
     final b = math.min(frameCount, a + 1);
     final fr = f - a;
     final s = _s[a] + (_s[b] - _s[a]) * fr;
-    var th = _a[a] + (_a[b] - _a[a]) * fr;
-    final k = smoothStep((f / frameCount - 0.88) / 0.12);
-    var target = _heading;
+    final th = _a[a] + (_a[b] - _a[a]) * fr;
+    return poseAlong(s, th, smoothStep((f / frameCount - 0.88) / 0.12));
+  }
+
+  /// The plane [s] along the line heading [th], blended by [k] into the
+  /// pose it rests in at the end of the artwork.
+  PlanePose poseAlong(double s, double th, double k) {
+    var target = heading;
     while (target - th > math.pi) {
       target -= 2 * math.pi;
     }
@@ -235,10 +251,13 @@ class FlightPlan {
       distance: s,
       x: c.dx + (rest.dx - c.dx) * k,
       y: c.dy + (rest.dy - c.dy) * k,
-      rotation: th - _heading,
+      rotation: th - heading,
       scale: scale,
     );
   }
+
+  double headingAt(double s) =>
+      headings[(s / step).round().clamp(0, sampleCount - 1)];
 }
 
 /// Parses the M, L and Z commands the traced outlines use.

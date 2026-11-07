@@ -71,6 +71,14 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
     unawaited(_loadInitial());
     ref.listenManual(isStartProvider, (_, running) => _onRunning(running));
     if (ref.read(isStartProvider)) _onRunning(true);
+    launchNotice.addListener(_onLaunchNotice);
+  }
+
+  void _onLaunchNotice() {
+    final text = launchNotice.value;
+    if (text == null) return;
+    launchNotice.value = null;
+    _showTip(text);
   }
 
   Future<void> _loadInitial() async {
@@ -82,6 +90,7 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
 
   @override
   void dispose() {
+    launchNotice.removeListener(_onLaunchNotice);
     _ticker.dispose();
     _probeTimer?.cancel();
     _tipTimer?.cancel();

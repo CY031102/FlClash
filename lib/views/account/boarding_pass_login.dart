@@ -13,24 +13,30 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'flight_plan.dart';
+import 'launch_flight.dart';
 import 'login.dart';
 import 'logo_data.dart';
 
-/// Shown over the whole app while it is true: on a first launch with no
-/// profile, and when the user chooses to sign in from the profiles page.
-final loginGateVisible = ValueNotifier<bool>(false);
+/// Shown over the whole app while it is true. It starts covered so the home
+/// screen never shows for a frame before the launch decides what to play.
+final loginGateVisible = ValueNotifier<bool>(true);
 
-/// Set before opening: a signed-in user's launch plays the flight straight
-/// away while the account is checked, instead of asking for a sign-in.
-bool _launchFlight = false;
+/// A line for the home screen to show once the gate has lifted.
+final launchNotice = ValueNotifier<String?>(null);
 
-void openLoginGate() {
-  _launchFlight = false;
-  loginGateVisible.value = true;
-}
+enum _Gate { pending, login, launch }
 
-void openLaunchFlight() {
-  _launchFlight = true;
+final _gate = ValueNotifier<_Gate>(_Gate.pending);
+var _opened = 0;
+
+void openLoginGate() => _open(_Gate.login);
+
+/// A signed-in user's launch: the short flight while the account is checked.
+void openLaunchFlight() => _open(_Gate.launch);
+
+void _open(_Gate gate) {
+  _opened++;
+  _gate.value = gate;
   loginGateVisible.value = true;
 }
 
@@ -41,18 +47,23 @@ class LoginGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: loginGateVisible,
-      builder: (context, visible, child) => Stack(
+    return ListenableBuilder(
+      listenable: Listenable.merge([loginGateVisible, _gate]),
+      builder: (context, child) => Stack(
         children: [
           child!,
-          if (visible)
+          if (loginGateVisible.value)
             Positioned.fill(
-              child: Overlay(
-                initialEntries: [
-                  OverlayEntry(builder: (_) => const BoardingPassLogin()),
-                ],
-              ),
+              child: switch (_gate.value) {
+                _Gate.pending => const ColoredBox(color: _C.bg),
+                _Gate.launch => _ReturningFlight(key: ValueKey(_opened)),
+                _Gate.login => Overlay(
+                  key: ValueKey(_opened),
+                  initialEntries: [
+                    OverlayEntry(builder: (_) => const BoardingPassLogin()),
+                  ],
+                ),
+              },
             ),
         ],
       ),
@@ -73,7 +84,7 @@ abstract final class _C {
   static const warning = Color(0xFFF2B84B);
 }
 
-enum _Phase { idle, pull, expand, fly, hover, leave, crash }
+enum _Phase { idle, pull, expand, fly, hover, leave, crash, short, back }
 
 enum _Server { checking, ok, down }
 
@@ -124,55 +135,22 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
 
   bool _loginDone = false;
   String? _loginFailure;
-  bool _banned = false;
-  late final bool _launch = _launchFlight;
+  bool _fullFlown = false;
+  Completer<LaunchVerdict>? _verdict;
   Duration _flyAt = Duration.zero;
   Duration _hoverAt = Duration.zero;
   PlanePose? _crashPose;
 
   bool get _busy => _phase != _Phase.idle;
 
-  bool get _canClose => !_banned && ref.read(profilesProvider).isNotEmpty;
+  bool get _canClose => ref.read(profilesProvider).isNotEmpty;
 
   @override
   void initState() {
     super.initState();
     unawaited(_loadAccount());
     unawaited(_checkServer());
-    if (_launch) {
-      _run();
-      _flyAt = _now;
-      _ink.reset();
-      _go(_Phase.fly);
-      unawaited(_verifyLaunch());
-    }
-  }
-
-  /// Only a ban keeps a signed-in user out; offline, blocked or an answer
-  /// that does not come lets them in on the subscription they already have.
-  Future<void> _verifyLaunch() async {
-    final authData = await loadPanelAuthData();
-    final banned = authData == null
-        ? null
-        : await _api.isBanned(authData).timeout(
-            const Duration(seconds: 6),
-            onTimeout: () => null,
-          );
-    if (banned == true) {
-      _banned = true;
-      _loginFailure = '此帳號已被停用，請聯繫客服';
-      return;
-    }
-    _loginDone = true;
-    final profile = ref.read(currentProfileProvider);
-    if (banned != null && profile != null) {
-      unawaited(ref.read(profilesActionProvider.notifier).updateProfile(profile));
-    }
-  }
-
-  void _skipFlight() {
-    if (_phase != _Phase.fly) return;
-    _flyAt = _now - FlightPlan.duration - const Duration(milliseconds: 20);
+    unawaited(loadFullFlightShown().then((shown) => _fullFlown = shown));
   }
 
   Future<void> _loadAccount() async {
@@ -225,7 +203,10 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
       case _Phase.pull:
         if (_since(_phaseAt) >= _pullMs) _startExpand();
       case _Phase.expand:
-        if (_since(_phaseAt) >= _expandMs) {
+        if (_since(_phaseAt) >= _expandMs && _fullFlown) {
+          _go(_Phase.short);
+          _ticker.stop();
+        } else if (_since(_phaseAt) >= _expandMs) {
           _flyAt = _now;
           _ink.reset();
           _go(_Phase.fly);
@@ -252,11 +233,19 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
       case _Phase.leave:
         if (_since(_phaseAt) >= 600) {
           _ticker.stop();
+          unawaited(markFullFlightShown());
           loginGateVisible.value = false;
           return;
         }
       case _Phase.crash:
         if (_since(_phaseAt) >= 4500) {
+          _phase = _Phase.idle;
+          _showRefusal(_loginFailure ?? '登入失敗，請稍後再試', 0);
+        }
+      case _Phase.short:
+        break;
+      case _Phase.back:
+        if (_since(_phaseAt) >= 1500) {
           _phase = _Phase.idle;
           _showRefusal(_loginFailure ?? '登入失敗，請稍後再試', 0);
         }
@@ -315,7 +304,7 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
       _badField = 0;
       _loginDone = false;
       _loginFailure = null;
-      _banned = false;
+      _verdict = Completer();
     });
     FocusManager.instance.primaryFocus?.unfocus();
     unawaited(_signIn(_email.text.trim(), _password.text));
@@ -353,6 +342,15 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
       commonPrint.log('panel login: $e');
       _loginFailure = '登入失敗，請稍後再試';
     }
+    final verdict = _verdict;
+    if (verdict != null && !verdict.isCompleted) {
+      verdict.complete(_loginDone ? LaunchVerdict.ok : LaunchVerdict.denied);
+    }
+  }
+
+  void _backFromShort() {
+    setState(() => _go(_Phase.back));
+    _run();
   }
 
   _StubPose _stubPose() {
@@ -385,6 +383,11 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
           return _StubPose.lerp(const _StubPose.flown(), const _StubPose(), k);
         }
         return const _StubPose.flown();
+      case _Phase.back:
+        final t = _since(_phaseAt);
+        if (t < 800) return const _StubPose.flown();
+        final k = Curves.easeOutBack.transform(((t - 800) / 700).clamp(0.0, 1.0));
+        return _StubPose.lerp(const _StubPose.flown(), const _StubPose(), k);
       case _Phase.expand:
         final k = Curves.easeIn.transform(
           (_since(_phaseAt) / 750).clamp(0.0, 1.0),
@@ -393,6 +396,7 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
       case _Phase.fly:
       case _Phase.hover:
       case _Phase.leave:
+      case _Phase.short:
         return const _StubPose.flown();
     }
   }
@@ -409,7 +413,13 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
       case _Phase.fly:
       case _Phase.hover:
       case _Phase.leave:
+      case _Phase.short:
         return 1;
+      case _Phase.back:
+        return 1 -
+            const Cubic(0.5, 0, 0.3, 1).transform(
+              (_since(_phaseAt) / 800).clamp(0.0, 1.0),
+            );
       case _Phase.crash:
         final t = _since(_phaseAt);
         if (t < 3000) return 1;
@@ -424,8 +434,9 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
     switch (_phase) {
       case _Phase.idle:
       case _Phase.pull:
-        return 0;
       case _Phase.expand:
+      case _Phase.short:
+      case _Phase.back:
         return 0;
       case _Phase.fly:
         return (_since(_flyAt) / 350).clamp(0.0, 1.0);
@@ -562,21 +573,14 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
                         ),
                       ),
                     ),
-                  if (_launch && _phase == _Phase.fly)
+                  if (_phase == _Phase.short)
                     Positioned.fill(
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: _skipFlight,
-                        child: Align(
-                          alignment: const Alignment(0, 0.92),
-                          child: Text(
-                            '點一下畫面跳過',
-                            style: _style(
-                              AppTextStyle.caption1,
-                              _C.bg.withValues(alpha: 0.6),
-                            ),
-                          ),
-                        ),
+                      child: LaunchFlight(
+                        verdict: _verdict!.future,
+                        from: _C.accent,
+                        mayGiveUp: false,
+                        onLanded: (_) => loginGateVisible.value = false,
+                        onDenied: _backFromShort,
                       ),
                     ),
                   if (logo > 0)
@@ -1199,4 +1203,88 @@ class _FlightPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_FlightPainter oldDelegate) => true;
+}
+
+/// A signed-in user's launch. Only a ban keeps them out; offline, blocked or
+/// no answer lets them in on the subscription they already have.
+class _ReturningFlight extends ConsumerStatefulWidget {
+  const _ReturningFlight({super.key});
+
+  @override
+  ConsumerState<_ReturningFlight> createState() => _ReturningFlightState();
+}
+
+class _ReturningFlightState extends ConsumerState<_ReturningFlight> {
+  late final Future<LaunchVerdict> _verdict = _verify();
+
+  Future<LaunchVerdict> _verify() async {
+    final authData = await loadPanelAuthData();
+    if (authData == null) return LaunchVerdict.ok;
+    final banned = await PanelApi()
+        .isBanned(authData)
+        .timeout(const Duration(seconds: 6), onTimeout: () => null);
+    if (banned == null) return LaunchVerdict.unknown;
+    if (banned) return LaunchVerdict.denied;
+    final profile = ref.read(currentProfileProvider);
+    if (profile != null) {
+      unawaited(ref.read(profilesActionProvider.notifier).updateProfile(profile));
+    }
+    return LaunchVerdict.ok;
+  }
+
+  TextStyle _style(AppTextStyle s, Color color, {bool strong = false}) =>
+      s.of(context, emphasized: strong).copyWith(color: color);
+
+  @override
+  Widget build(BuildContext context) {
+    return LaunchFlight(
+      verdict: _verdict,
+      onLanded: (verified) {
+        loginGateVisible.value = false;
+        if (!verified) launchNotice.value = '暫時無法更新帳號資訊';
+      },
+      deniedPanel: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('此帳號已被停用', style: _style(AppTextStyle.subheadline, _C.bg, strong: true)),
+            const SizedBox(height: 10),
+            Text(
+              '如有疑問，請聯繫客服',
+              style: _style(AppTextStyle.footnote, const Color(0xFF4A5570)),
+            ),
+            const SizedBox(height: 18),
+            GestureDetector(
+              onTap: () => unawaited(dialogs.openUrl('$panelApiBase/#/ticket')),
+              child: MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: DecoratedBox(
+                  decoration: ShapeDecoration(
+                    color: _C.bg,
+                    shape: AppShape.all(10),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 22,
+                      vertical: 8,
+                    ),
+                    child: Text(
+                      '聯繫客服',
+                      style: _style(AppTextStyle.footnote, _C.text),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _Link(
+              text: '改用其他帳號登入',
+              style: _style(AppTextStyle.caption1, const Color(0xFF4A5570)),
+              onTap: openLoginGate,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
