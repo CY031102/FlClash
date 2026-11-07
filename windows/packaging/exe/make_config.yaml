@@ -6,6 +6,8 @@ publisher_url: https://atcskylink.com/
 display_name: ATCSkylink
 executable_name: FlClash.exe
 output_base_file_name: ATCSkylink.exe
+# The packager defaults this to the pubspec name.
+install_dir_name: '{autopf64}\ATCSkylink'
 # Resolved against the project root: flutter_distributor turns this into an
 # absolute path via Directory.current.
 setup_icon_file: windows\runner\resources\app_icon.ico
