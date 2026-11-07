@@ -14,6 +14,7 @@ import 'package:fl_clash/l10n/l10n.dart';
 import 'package:fl_clash/models/models.dart';
 import 'package:fl_clash/providers/providers.dart';
 import 'package:fl_clash/state.dart';
+import 'package:fl_clash/views/account/boarding_pass_login.dart';
 import 'package:fl_clash/views/disclaimer.dart';
 import 'package:fl_clash/views/navigation.dart';
 import 'package:flutter/widgets.dart';
@@ -183,12 +184,14 @@ class Bootstrap {
       case BootRecovery.none:
         return;
       case BootRecovery.skipAutoSetup:
+        liftPendingGate();
         await dialogs.showAlert(
           title: currentAppLocalizations.launchInterrupted,
           dismissible: false,
           message: TextSpan(text: currentAppLocalizations.launchInterruptedTip),
         );
       case BootRecovery.clearProfile:
+        liftPendingGate();
         await dialogs.showAlert(
           title: currentAppLocalizations.crashDetected,
           dismissible: false,
@@ -210,6 +213,7 @@ class Bootstrap {
 
   Future<void> _handleFailedPreference() async {
     if (await preferences.isInit) return;
+    liftPendingGate();
     final res = await dialogs.showMessage(
       title: currentAppLocalizations.tip,
       message: TextSpan(text: currentAppLocalizations.cacheCorrupt),
@@ -237,6 +241,7 @@ class Bootstrap {
     if (acceptedVersion >= disclaimerVersion) {
       return true;
     }
+    if (!_isDisclaimerAcceptedByEnvironment) liftPendingGate();
     final isDisclaimerAccepted =
         _isDisclaimerAcceptedByEnvironment || await requestDisclaimerConsent();
     if (!isDisclaimerAccepted) {

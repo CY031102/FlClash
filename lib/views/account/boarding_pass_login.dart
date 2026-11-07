@@ -34,6 +34,12 @@ void openLoginGate() => _open(_Gate.login);
 /// A signed-in user's launch: the short flight while the account is checked.
 void openLaunchFlight() => _open(_Gate.launch);
 
+/// Startup dialogs open under the gate; the cover that hides the home screen
+/// before the launch decides must step aside for them.
+void liftPendingGate() {
+  if (_gate.value == _Gate.pending) loginGateVisible.value = false;
+}
+
 void _open(_Gate gate) {
   _opened++;
   _gate.value = gate;
