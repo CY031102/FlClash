@@ -111,6 +111,8 @@ class _LaunchFlightState extends State<LaunchFlight>
   double? _logoAt;
   double? _mapAt;
   double? _hintAt;
+  double? _haloAt;
+  double _haloFrom = 0;
   double? _deniedAt;
   double? _outAt;
   bool _tapped = false;
@@ -342,12 +344,15 @@ class _LaunchFlightState extends State<LaunchFlight>
       _leave();
       return;
     }
-    if (_hintAt == null && (since > 1500 || (_tapped && since > 300))) {
+    if (_haloAt == null && since > 1200) _haloAt = _ms;
+    final glowing = _haloAt == null ? -1 : _ms - _haloAt!;
+    if (_hintAt == null && (glowing > 1500 || (_tapped && glowing > 300))) {
       _hintAt = _ms;
     }
   }
 
   void _leave() {
+    _haloFrom = _halo;
     _outAt = _ms;
     _go(_Step.out);
   }
@@ -436,8 +441,13 @@ class _LaunchFlightState extends State<LaunchFlight>
   }
 
   double get _halo {
-    if (_step == _Step.wait) return ((_sinceStep - 350) / 330).clamp(0.0, 1.0);
-    if (_step == _Step.out) return (1 - _sinceStep / 250).clamp(0.0, 1.0);
+    final at = _haloAt;
+    if (_step == _Step.wait) {
+      return at == null ? 0 : ((_ms - at) / 660).clamp(0.0, 1.0);
+    }
+    if (_step == _Step.out) {
+      return _haloFrom * (1 - _sinceStep / 250).clamp(0.0, 1.0);
+    }
     return 0;
   }
 
