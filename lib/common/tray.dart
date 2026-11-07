@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:tray/tray.dart';
 
 import 'app_localizations.dart';
-import 'l10n_labels.dart';
 import 'app_ports.dart';
 import 'constant.dart';
 import 'keyboard.dart';
@@ -130,7 +129,6 @@ class AppTray implements TrayPort {
   }) {
     final commonAction = read(commonActionProvider.notifier);
     final systemAction = read(systemActionProvider.notifier);
-    final setupAction = read(setupActionProvider.notifier);
     final appLocalizations = currentAppLocalizations;
     String? shortcut(HotAction action) => _shortcut(trayState, action);
     final showItem = TrayMenuAction(
@@ -150,66 +148,16 @@ class AppTray implements TrayPort {
 
     return [
       showItem,
-      TrayMenuCheckbox(
-        label: trayState.isStart
-            ? appLocalizations.stop
-            : appLocalizations.start,
-        checked: false,
+      TrayMenuAction(
+        label: trayState.isStart ? '斷開' : '連線',
         detail: shortcut(HotAction.start),
         onSelected: commonAction.toggleRunning,
       ),
-      if (isMacOS) ...[
-        TrayMenuCheckbox(
-          label: appLocalizations.speedStatistics,
-          checked: trayState.showTrayTitle,
-          onSelected: commonAction.updateSpeedStatistics,
-        ),
-        TrayMenuCheckbox(
-          label: appLocalizations.monochromeIcon,
-          checked: trayState.monochromeTrayIcon,
-          onSelected: commonAction.updateMonochromeTrayIcon,
-        ),
-      ],
       const TrayMenuSeparator(),
-      for (final mode in Mode.values)
-        TrayMenuCheckbox(
-          label: mode.label,
-          checked: mode == trayState.mode,
-          detail: shortcut(switch (mode) {
-            Mode.rule => HotAction.ruleMode,
-            Mode.global => HotAction.globalMode,
-            Mode.direct => HotAction.directMode,
-          }),
-          onSelected: () {
-            setupAction.changeMode(mode);
-          },
-        ),
-      const TrayMenuSeparator(),
-      if (isMacOS) ..._buildGroupMenu(trayState: trayState, read: read),
-      if (trayState.isStart) ...[
-        TrayMenuCheckbox(
-          label: appLocalizations.tun,
-          checked: trayState.tunEnable,
-          detail: shortcut(HotAction.tun),
-          onSelected: systemAction.updateTun,
-        ),
-        TrayMenuCheckbox(
-          label: appLocalizations.systemProxy,
-          checked: trayState.systemProxy,
-          detail: shortcut(HotAction.proxy),
-          onSelected: systemAction.updateSystemProxy,
-        ),
-        const TrayMenuSeparator(),
-      ],
       TrayMenuCheckbox(
-        label: appLocalizations.autoLaunch,
+        label: '開機自啟動',
         checked: trayState.autoLaunch,
         onSelected: systemAction.updateAutoLaunch,
-      ),
-      TrayMenuAction(
-        label: appLocalizations.copyEnvVar,
-        detail: shortcut(HotAction.copyEnv),
-        onSelected: systemAction.copyProxyEnv,
       ),
       const TrayMenuSeparator(),
       exitItem,
@@ -226,71 +174,6 @@ class AppTray implements TrayPort {
       isMacOS: isMacOS,
       isWindows: isWindows,
     ).text(hotKey.modifiers, key);
-  }
-
-  String? _delayText(int? delay) {
-    if (delay == null) {
-      return null;
-    }
-    return delay > 0
-        ? '$delay'
-        : delayFailureText(delay, currentAppLocalizations);
-  }
-
-  List<TrayMenuItem> _buildGroupMenu({
-    required TrayState trayState,
-    required ProviderReader read,
-  }) {
-    if (trayState.groups.isEmpty) {
-      return const [];
-    }
-    final delays = read(trayDelaysProvider);
-    final proxiesAction = read(proxiesActionProvider.notifier);
-    return [
-      for (final group in trayState.groups)
-        _buildGroupSubmenu(
-          group,
-          selectedName: read(selectedProxyNameProvider(group.name)),
-          delays: delays[group.name] ?? const {},
-          onSelected: (proxyName) {
-            proxiesAction.changeProxy(
-              groupName: group.name,
-              proxyName: proxyName,
-            );
-          },
-        ),
-      TrayMenuAction(
-        label: HotAction.delayTest.label,
-        detail: _shortcut(trayState, HotAction.delayTest),
-        onSelected: () {
-          proxiesAction.delayTestGroups(trayState.groups);
-        },
-      ),
-      const TrayMenuSeparator(),
-    ];
-  }
-
-  TrayMenuSubmenu _buildGroupSubmenu(
-    Group group, {
-    required String? selectedName,
-    required Map<String, int> delays,
-    required void Function(String proxyName) onSelected,
-  }) {
-    return TrayMenuSubmenu(
-      label: group.name,
-      detail: _delayText(delays[selectedName]),
-      items: [
-        for (final proxy in group.all)
-          TrayMenuCheckbox(
-            label: proxy.name,
-            checked: selectedName == proxy.name,
-            detail: _delayText(delays[proxy.name]),
-            onSelected: () {
-              onSelected(proxy.name);
-            },
-          ),
-      ],
-    );
   }
 }
 

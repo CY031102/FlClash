@@ -79,6 +79,7 @@ abstract final class _C {
   static const text = Color(0xFFF3F5FA);
   static const muted = Color(0xFF8C95AD);
   static const accent = Color(0xFF3DB4F2);
+  static const sky = Color(0xFFE9EEF5);
   static const danger = Color(0xFFFF6B7E);
   static const success = Color(0xFF35D39A);
   static const warning = Color(0xFFF2B84B);
@@ -136,6 +137,10 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
   bool _loginDone = false;
   String? _loginFailure;
   bool _fullFlown = false;
+  final _gateNo = () {
+    final r = math.Random();
+    return '${'ABCDEF'[r.nextInt(6)]}${r.nextInt(30) + 1}';
+  }();
   Completer<LaunchVerdict>? _verdict;
   Duration _flyAt = Duration.zero;
   Duration _hoverAt = Duration.zero;
@@ -430,6 +435,18 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
     }
   }
 
+  /// The stub's blue spreads over the window, then settles to the sky the
+  /// flight is drawn on.
+  Color _blobColor() {
+    final settle = switch (_phase) {
+      _Phase.idle || _Phase.pull || _Phase.expand || _Phase.short => 0.0,
+      _Phase.fly || _Phase.hover || _Phase.leave =>
+        (_since(_flyAt) / 500).clamp(0.0, 1.0),
+      _Phase.crash || _Phase.back => 1.0,
+    };
+    return Color.lerp(_C.accent, _C.sky, settle)!;
+  }
+
   double _logoOpacity() {
     switch (_phase) {
       case _Phase.idle:
@@ -569,7 +586,7 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
                     Positioned.fill(
                       child: IgnorePointer(
                         child: CustomPaint(
-                          painter: _BlobPainter(tear, reach * blob),
+                          painter: _BlobPainter(tear, reach * blob, _blobColor()),
                         ),
                       ),
                     ),
@@ -685,7 +702,7 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
         child: Row(
           children: [
             Expanded(
-              child: EditableText(
+              child: TextField(
                 controller: controller,
                 focusNode: focusNode,
                 readOnly: _busy,
@@ -700,8 +717,10 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
                 onSubmitted: onSubmitted,
                 style: _style(AppTextStyle.subheadline, _C.text),
                 cursorColor: _C.accent,
-                backgroundCursorColor: _C.muted,
-                selectionColor: _C.accent.withValues(alpha: 0.35),
+                decoration: const InputDecoration.collapsed(
+                  hintText: null,
+                  filled: false,
+                ),
               ),
             ),
             ?trailing,
@@ -779,7 +798,7 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
                       child: MouseRegion(
                         cursor: SystemMouseCursors.click,
                         child: GlyphIcon(
-                          _obscure ? AppGlyphs.eye : AppGlyphs.eyeOff,
+                          _obscure ? AppGlyphs.eyeOff : AppGlyphs.eye,
                           size: 18,
                           color: _C.muted,
                         ),
@@ -789,10 +808,10 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
                   const Spacer(),
                   Row(
                     children: [
-                      for (final (k, v) in const [
+                      for (final (k, v) in [
                         ('FROM', 'HOME'),
                         ('TO', 'WORLD'),
-                        ('GATE', 'A1'),
+                        ('GATE', _gateNo),
                       ])
                         Padding(
                           padding: const EdgeInsets.only(right: 26),
@@ -1047,19 +1066,22 @@ class _PlaneIconPainter extends CustomPainter {
 }
 
 class _BlobPainter extends CustomPainter {
-  const _BlobPainter(this.centre, this.radius);
+  const _BlobPainter(this.centre, this.radius, this.color);
 
   final Offset centre;
   final double radius;
+  final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.drawCircle(centre, radius, Paint()..color = _C.accent);
+    canvas.drawCircle(centre, radius, Paint()..color = color);
   }
 
   @override
   bool shouldRepaint(_BlobPainter oldDelegate) =>
-      oldDelegate.radius != radius || oldDelegate.centre != centre;
+      oldDelegate.radius != radius ||
+      oldDelegate.centre != centre ||
+      oldDelegate.color != color;
 }
 
 class _FlightFrame {

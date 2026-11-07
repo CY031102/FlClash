@@ -150,10 +150,10 @@ end;
 // windows/runner/Runner.rc.
 procedure RemoveUserData;
 begin
-  DelTree(ExpandConstant('{userappdata}\com.follow\clash'), True, True, True);
-  DelTree(ExpandConstant('{localappdata}\com.follow\clash'), True, True, True);
-  RemoveDir(ExpandConstant('{userappdata}\com.follow'));
-  RemoveDir(ExpandConstant('{localappdata}\com.follow'));
+  DelTree(ExpandConstant('{userappdata}\ATCSkylink\ATCSkylink'), True, True, True);
+  DelTree(ExpandConstant('{localappdata}\ATCSkylink\ATCSkylink'), True, True, True);
+  RemoveDir(ExpandConstant('{userappdata}\ATCSkylink'));
+  RemoveDir(ExpandConstant('{localappdata}\ATCSkylink'));
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
