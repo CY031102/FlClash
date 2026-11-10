@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:fl_clash/common/common.dart';
+import 'package:fl_clash/common/window.dart';
 import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/providers/providers.dart';
 import 'package:fl_clash/ui/icons/icons.dart';
@@ -27,6 +28,10 @@ final launchNotice = ValueNotifier<String?>(null);
 
 /// True once the computer has had no Wi-Fi or Ethernet for a few seconds.
 final networkOffline = ValueNotifier<bool>(false);
+
+/// True while a start from the tray at sign-in waits to report how the
+/// connection came up.
+final startupReport = ValueNotifier<bool>(false);
 
 const offlineMessage = '未連接網路，請檢查 Wi-Fi 或網線';
 
@@ -55,7 +60,27 @@ void liftPendingGate() {
   if (_gate.value == _Gate.pending) loginGateVisible.value = false;
 }
 
+var _pendingDenied = false;
+var _deniedHeld = false;
+
+/// A refusal found while the app sat in the tray: the next time the window
+/// is shown, the flight plays and the plane falls.
+void holdDeniedForWindow() {
+  _pendingDenied = true;
+}
+
+/// Shows the window from the tray, first putting up what was held for it.
+Future<void> showMainWindow() async {
+  if (_pendingDenied) {
+    _pendingDenied = false;
+    _deniedHeld = true;
+    openLaunchFlight();
+  }
+  await window?.show();
+}
+
 void _open(_Gate gate) {
+  if (gate != _Gate.launch) _deniedHeld = false;
   _opened++;
   _gate.value = gate;
   loginGateVisible.value = true;
@@ -1265,8 +1290,7 @@ class _FlightPainter extends CustomPainter {
   bool shouldRepaint(_FlightPainter oldDelegate) => true;
 }
 
-/// A signed-in user's launch. Only a ban keeps them out; offline, blocked or
-/// no answer lets them in on the subscription they already have.
+/// A signed-in user's launch.
 class _ReturningFlight extends ConsumerStatefulWidget {
   const _ReturningFlight({super.key});
 
@@ -1275,21 +1299,15 @@ class _ReturningFlight extends ConsumerStatefulWidget {
 }
 
 class _ReturningFlightState extends ConsumerState<_ReturningFlight> {
-  late final Future<LaunchVerdict> _verdict = _verify();
+  late final Future<LaunchVerdict> _verdict = _deniedHeld
+      ? Future.value(LaunchVerdict.denied)
+      : verifyPanelAccount(ref);
 
-  Future<LaunchVerdict> _verify() async {
-    final authData = await loadPanelAuthData();
-    if (authData == null) return LaunchVerdict.ok;
-    final banned = await PanelApi()
-        .isBanned(authData)
-        .timeout(const Duration(seconds: 6), onTimeout: () => null);
-    if (banned == null) return LaunchVerdict.unknown;
-    if (banned) return LaunchVerdict.denied;
-    final profile = ref.read(currentProfileProvider);
-    if (profile != null) {
-      unawaited(ref.read(profilesActionProvider.notifier).updateProfile(profile));
-    }
-    return LaunchVerdict.ok;
+  @override
+  void initState() {
+    super.initState();
+    _verdict.ignore();
+    _deniedHeld = false;
   }
 
   TextStyle _style(AppTextStyle s, Color color, {bool strong = false}) =>

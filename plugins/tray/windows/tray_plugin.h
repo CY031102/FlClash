@@ -36,6 +36,7 @@ class TrayPlugin : public flutter::Plugin {
   bool Show(const flutter::EncodableMap& arguments);
   void Hide();
   bool OpenMenu();
+  bool Notify(const flutter::EncodableMap& arguments);
   bool ApplyIcon(bool add);
   void RestoreIcon();
   void ScheduleRestore();

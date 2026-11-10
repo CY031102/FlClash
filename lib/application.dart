@@ -5,6 +5,10 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:fl_clash/bootstrap.dart';
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/common/skylink_policy.dart';
+import 'package:fl_clash/common/skylink_prefs.dart';
+import 'package:fl_clash/common/tray.dart';
+import 'package:fl_clash/views/account/launch_flight.dart';
+import 'package:fl_clash/views/account/login.dart';
 import 'package:fl_clash/common/system_dns.dart';
 import 'package:fl_clash/common/window.dart';
 import 'package:fl_clash/enum/enum.dart';
@@ -109,11 +113,40 @@ class ApplicationState extends ConsumerState<Application> {
   }
 
   void _promptLoginWhenEmpty() {
-    if (ref.read(profilesProvider).isNotEmpty) {
-      openLaunchFlight();
-    } else {
+    if (ref.read(profilesProvider).isEmpty) {
       openLoginGate();
+      if (launchedAtStartup) unawaited(window?.show());
+    } else if (launchedAtStartup) {
+      liftPendingGate();
+      unawaited(_startInTray());
+    } else {
+      openLaunchFlight();
     }
+  }
+
+  /// Started by Windows at sign-in: no window and no flight, only a
+  /// notification saying how the app came up.
+  Future<void> _startInTray() async {
+    final verdict = await verifyPanelAccount(ref);
+    if (verdict == LaunchVerdict.denied) {
+      holdDeniedForWindow();
+      await appTray?.notify(
+        title: '帳號已被停用',
+        body: '點一下查看詳情',
+      );
+      return;
+    }
+    final resume =
+        await SkylinkPrefs.keepLastState() && await SkylinkPrefs.lastRunning();
+    if (resume && !networkOffline.value) {
+      startupReport.value = true;
+      await ref.read(setupActionProvider.notifier).setRunning(true);
+      return;
+    }
+    await appTray?.notify(
+      title: '$brandName 在背景運行中',
+      body: '點一下圖示打開窗口',
+    );
   }
 
   void _initLink() {

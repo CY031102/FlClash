@@ -6,6 +6,7 @@ import 'package:fl_clash/common/boot_record.dart';
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/common/launch.dart';
 import 'package:fl_clash/common/migration.dart';
+import 'package:fl_clash/common/skylink_prefs.dart';
 import 'package:fl_clash/common/tray.dart';
 import 'package:fl_clash/common/window.dart';
 import 'package:fl_clash/database/database.dart';
@@ -158,7 +159,9 @@ class Bootstrap {
     unawaited(
       autoLaunch?.updateStatus(_container.read(appSettingProvider).autoLaunch),
     );
-    if (!_container.read(appSettingProvider).silentLaunch) {
+    final silent =
+        _container.read(appSettingProvider).silentLaunch || launchedAtStartup;
+    if (!silent) {
       unawaited(window?.show());
     } else {
       unawaited(window?.hide());

@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:collection/collection.dart';
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/common/tray.dart';
-import 'package:fl_clash/common/window.dart';
 import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/providers/action.dart';
 import 'package:fl_clash/providers/app.dart';
 import 'package:fl_clash/providers/state.dart';
+import 'package:fl_clash/views/account/boarding_pass_login.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tray/tray.dart';
@@ -100,7 +100,7 @@ class _TrayManagerState extends ConsumerState<TrayManager> {
   void _handleTrayEvent(TrayEvent event) {
     switch (event) {
       case TrayIconActivated():
-        window?.show();
+        showMainWindow();
       case TrayMenuRequested():
         _reportFailure(Tray.instance.openMenu());
       case TrayMenuItemSelected():

@@ -3,9 +3,12 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:fl_clash/common/common.dart';
+import 'package:fl_clash/common/skylink_prefs.dart';
+import 'package:fl_clash/common/tray.dart';
 import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/models/models.dart';
 import 'package:fl_clash/providers/providers.dart';
+import 'package:fl_clash/ui/icons/icons.dart';
 import 'package:fl_clash/views/account/boarding_pass_login.dart';
 import 'package:fl_clash/views/account/flight_plan.dart';
 import 'package:fl_clash/views/account/logo_data.dart';
@@ -78,6 +81,9 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
   bool _loggingOut = false;
   bool _awaitingNetwork = false;
   _HomeView? _frozen;
+  bool _guide = false;
+  bool _keepLastState = false;
+  bool _hover = false;
   final _switchKey = GlobalKey();
   bool _termsOpen = false;
 
@@ -86,6 +92,7 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
     super.initState();
     _ticker.start();
     unawaited(_loadInitial());
+    unawaited(_loadPrefs());
     ref.listenManual(isStartProvider, (_, running) => _onRunning(running));
     if (ref.read(isStartProvider)) _onRunning(true);
     launchNotice.addListener(_onLaunchNotice);
@@ -135,6 +142,16 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
     _showTip(text);
   }
 
+  Future<void> _loadPrefs() async {
+    final guide = !await SkylinkPrefs.connectGuideDone();
+    final keep = await SkylinkPrefs.keepLastState();
+    if (!mounted) return;
+    setState(() {
+      _guide = guide;
+      _keepLastState = keep;
+    });
+  }
+
   Future<void> _loadInitial() async {
     final email = await loadSignedInAccount() ?? await loadLastPanelAccount();
     if (!mounted) return;
@@ -167,7 +184,10 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
         ? math.min(target, _drift + step)
         : math.max(target, _drift - step);
     final moving =
-        _drift > 0 || _link == _Link.connecting || _link == _Link.connected;
+        _drift > 0 ||
+        _link == _Link.connecting ||
+        _link == _Link.connected ||
+        (_guide && _link == _Link.off);
     if (moving) setState(() {});
   }
 
@@ -208,8 +228,15 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
     if (ok) {
       final wasConnecting = _link == _Link.connecting;
       _failures = 0;
-      setState(() => _link = _Link.connected);
+      setState(() {
+        _link = _Link.connected;
+        if (_guide) {
+          _guide = false;
+          unawaited(SkylinkPrefs.markConnectGuideDone());
+        }
+      });
       if (wasConnecting) _showTip('已確認可以打開 Google');
+      _reportStartup(connected: true);
       _probeTimer = Timer(_probeEvery, () => unawaited(_probe(run)));
       return;
     }
@@ -217,6 +244,7 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
     final giveUp = _link == _Link.connecting ? _failures >= 3 : _failures >= 2;
     if (giveUp) {
       setState(() => _link = _Link.trouble);
+      _reportStartup(connected: false);
     }
     _probeTimer = Timer(
       Duration(seconds: _link == _Link.connected ? 5 : 4),
@@ -246,6 +274,17 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
     } finally {
       _toggling = false;
     }
+  }
+
+  void _reportStartup({required bool connected}) {
+    if (!startupReport.value) return;
+    startupReport.value = false;
+    unawaited(
+      appTray?.notify(
+        title: connected ? '$brandName 已在背景連線' : '$brandName 在背景運行中',
+        body: connected ? '現在可以正常上網' : '暫時無法連線，點一下圖示查看',
+      ),
+    );
   }
 
   void _showTip(String text) {
@@ -507,9 +546,12 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
                     seconds: _seconds,
                     drift: _drift,
                     plane: _plane,
+                    guide: _guide && link == _Link.off && blocked == null,
+                    hover: _hover,
+                    onHover: (over) => setState(() => _hover = over),
                     onTap: () => unawaited(_toggle()),
                   ),
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 30),
                   Text(
                     status,
                     style: _style(
@@ -519,16 +561,22 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
                     ),
                   ),
                   const SizedBox(height: 8),
-                  _Pressable(
-                    onTap: () => setState(() {
-                      _menuOpen = false;
-                      _nodesOpen = !_nodesOpen;
-                    }),
-                    child: Text(
-                      '$node  ›',
-                      style: _style(AppTextStyle.footnote, _C.muted),
+                  if (_guide && link == _Link.off && blocked == null)
+                    Text(
+                      '點一下飛機開始連線',
+                      style: _style(AppTextStyle.footnote, _C.accent),
+                    )
+                  else
+                    _Pressable(
+                      onTap: () => setState(() {
+                        _menuOpen = false;
+                        _nodesOpen = !_nodesOpen;
+                      }),
+                      child: Text(
+                        '$node  ›',
+                        style: _style(AppTextStyle.footnote, _C.muted),
+                      ),
                     ),
-                  ),
                   const SizedBox(height: 6),
                   Text(
                     account,
@@ -577,7 +625,7 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
             Positioned(
               right: 16,
               top: 48,
-              width: 170,
+              width: 236,
               child: Reveal(
                 visible: _menuOpen,
                 alignment: Alignment.topRight,
@@ -585,6 +633,28 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
                   children: [
                     _MenuRow('方案與續費', onTap: () => _openSite('plan')),
                     _MenuRow('客服', onTap: () => _openSite('ticket')),
+                    const _MenuDivider(),
+                    _CheckRow(
+                      '開機自啟動',
+                      note: '電腦開機後自動打開 $brandName，停在工作列角落',
+                      checked: ref.watch(
+                        appSettingProvider.select((s) => s.autoLaunch),
+                      ),
+                      onTap: ref
+                          .read(systemActionProvider.notifier)
+                          .updateAutoLaunch,
+                    ),
+                    _CheckRow(
+                      '保持最後狀態',
+                      note: '退出時是什麼狀態，下次打開就回到什麼狀態',
+                      checked: _keepLastState,
+                      onTap: () {
+                        setState(() => _keepLastState = !_keepLastState);
+                        unawaited(SkylinkPrefs.setKeepLastState(_keepLastState));
+                        unawaited(SkylinkPrefs.markKeepLastStateAsked());
+                      },
+                    ),
+                    const _MenuDivider(),
                     _MenuRow(
                       '登出',
                       color: _C.danger,
@@ -676,6 +746,9 @@ class _Switch extends StatelessWidget {
     required this.drift,
     required this.plane,
     required this.onTap,
+    this.guide = false,
+    this.hover = false,
+    this.onHover,
   });
 
   final _Link link;
@@ -685,19 +758,31 @@ class _Switch extends StatelessWidget {
   final Path plane;
   final VoidCallback onTap;
 
+  /// A halo spreading from the ring, asking for the first connection.
+  final bool guide;
+  final bool hover;
+  final ValueChanged<bool>? onHover;
+
   @override
   Widget build(BuildContext context) {
     final on = link == _Link.connected || link == _Link.trouble;
     final busy = link == _Link.connecting;
-    final fill = on ? _C.accent : _C.surface;
+    final lit = !on && !busy && hover ? 1.0 : 0.0;
+    final fill = on ? _C.accent : Color.lerp(_C.surface, _C.surfaceHi, 0.5 * lit)!;
     final glow = on ? 0.03 * math.sin(seconds * 2 * math.pi / 11) : 0.0;
     final breathe = busy ? (math.sin(seconds * 2 * math.pi / 1.6) + 1) / 2 : 0.0;
-    final ringColor = on || busy ? _C.accent : _C.surfaceHi;
-    final planeColor = on ? _C.bg : (busy ? _C.accent : _C.muted);
+    final ringColor = on || busy
+        ? _C.accent
+        : Color.lerp(_C.surfaceHi, _C.accent, 0.45 * lit)!;
+    final planeColor = on
+        ? _C.bg
+        : (busy ? _C.accent : Color.lerp(_C.muted, _C.text, 0.4 * lit)!);
     return MouseRegion(
       cursor: disabled
           ? SystemMouseCursors.forbidden
           : SystemMouseCursors.click,
+      onEnter: (_) => onHover?.call(true),
+      onExit: (_) => onHover?.call(false),
       child: GestureDetector(
         onTap: onTap,
         child: Opacity(
@@ -706,7 +791,13 @@ class _Switch extends StatelessWidget {
             dimension: 140,
             child: Stack(
               alignment: Alignment.center,
+              clipBehavior: Clip.none,
               children: [
+                if (guide && !on && !busy)
+                  CustomPaint(
+                    size: const Size.square(140),
+                    painter: _HaloPainter(seconds),
+                  ),
                 Transform.scale(
                   scale: 1 + 0.1 * breathe,
                   child: Opacity(
@@ -725,7 +816,7 @@ class _Switch extends StatelessWidget {
                   ),
                 ),
                 AnimatedContainer(
-                  duration: const Duration(milliseconds: 900),
+                  duration: Motion.medium,
                   curve: _calm,
                   width: 128,
                   height: 128,
@@ -764,6 +855,37 @@ class _Switch extends StatelessWidget {
         0.8 * math.sin(t * 2 * math.pi / 9.4 + math.pi);
     return wing * d;
   }
+}
+
+/// Separate Archive's guide halo, slowed to this screen's pace: a ring
+/// leaves the switch's edge, spreads a little, thins and melts into the
+/// background, then rests before the next.
+class _HaloPainter extends CustomPainter {
+  const _HaloPainter(this.seconds);
+
+  final double seconds;
+
+  static const _spread = 2.4;
+  static const _rest = 1.6;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cycle = seconds % (_spread + _rest);
+    if (cycle >= _spread) return;
+    final e = (1 - math.cos(math.pi * cycle / _spread)) / 2;
+    final radius = size.width / 2 + 2 + 14 * e;
+    canvas.drawCircle(
+      size.center(Offset.zero),
+      radius,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.6 - 1.6 * e
+        ..color = Color.lerp(_C.accent, _C.bg, math.pow(e, 0.8).toDouble())!,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_HaloPainter old) => old.seconds != seconds;
 }
 
 class _PlanePainter extends CustomPainter {
@@ -930,6 +1052,93 @@ class _Panel extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: children,
+        ),
+      ),
+    );
+  }
+}
+
+class _MenuDivider extends StatelessWidget {
+  const _MenuDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      child: SizedBox(
+        height: 1,
+        child: ColoredBox(color: _C.surfaceHi),
+      ),
+    );
+  }
+}
+
+/// A switch in the menu with a line under it saying what it does.
+class _CheckRow extends StatelessWidget {
+  const _CheckRow(
+    this.text, {
+    required this.note,
+    required this.checked,
+    required this.onTap,
+  });
+
+  final String text;
+  final String note;
+  final bool checked;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Pressable(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: AnimatedContainer(
+                duration: Motion.short,
+                curve: _calm,
+                width: 16,
+                height: 16,
+                decoration: ShapeDecoration(
+                  color: checked ? _C.accent : const Color(0x00000000),
+                  shape: AppShape.all(5).copyWith(
+                    side: BorderSide(
+                      color: checked ? _C.accent : _C.muted,
+                      width: 1.5,
+                    ),
+                  ),
+                ),
+                child: checked
+                    ? const GlyphIcon(AppGlyphs.check, size: 12, color: _C.bg)
+                    : null,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    text,
+                    style: AppTextStyle.footnote
+                        .of(context)
+                        .copyWith(color: _C.text),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    note,
+                    style: AppTextStyle.caption2
+                        .of(context)
+                        .copyWith(color: _C.muted),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

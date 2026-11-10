@@ -297,6 +297,25 @@ void TrayPlugin::Hide() {
   visible_ = false;
 }
 
+// A balloon on the icon, which Windows 10 and 11 show as a toast and keep in
+// the notification centre.
+bool TrayPlugin::Notify(const flutter::EncodableMap& arguments) {
+  if (!visible_ || !icon_requested_) {
+    return false;
+  }
+  const std::string* title = StringAt(arguments, "title");
+  const std::string* body = StringAt(arguments, "body");
+  NOTIFYICONDATAW data = icon_data_;
+  data.uFlags = NIF_INFO;
+  data.dwInfoFlags = NIIF_USER | NIIF_LARGE_ICON | NIIF_RESPECT_QUIET_TIME;
+  data.hBalloonIcon = icon_data_.hIcon;
+  ::StringCchCopyW(data.szInfoTitle, ARRAYSIZE(data.szInfoTitle),
+                   Utf16FromUtf8(title == nullptr ? "" : *title).c_str());
+  ::StringCchCopyW(data.szInfo, ARRAYSIZE(data.szInfo),
+                   Utf16FromUtf8(body == nullptr ? "" : *body).c_str());
+  return ::Shell_NotifyIconW(NIM_MODIFY, &data) != FALSE;
+}
+
 bool TrayPlugin::OpenMenu() {
   if (menu_ == nullptr || !visible_) {
     return false;
@@ -352,7 +371,7 @@ std::optional<LRESULT> TrayPlugin::HandleWindowProc(HWND window,
   }
 
   if (message == kTrayCallbackMessage) {
-    if (lparam == WM_LBUTTONUP) {
+    if (lparam == WM_LBUTTONUP || lparam == NIN_BALLOONUSERCLICK) {
       SendEvent("onIconActivated", flutter::EncodableValue());
     } else if (lparam == WM_RBUTTONUP) {
       SendEvent("onMenuRequested", flutter::EncodableValue());
@@ -402,6 +421,14 @@ void TrayPlugin::HandleMethodCall(
 
   if (method == "openMenu") {
     result->Success(flutter::EncodableValue(OpenMenu()));
+    return;
+  }
+
+  if (method == "notify") {
+    const auto* arguments =
+        std::get_if<flutter::EncodableMap>(method_call.arguments());
+    result->Success(flutter::EncodableValue(
+        arguments != nullptr && Notify(*arguments)));
     return;
   }
 

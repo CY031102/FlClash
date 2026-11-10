@@ -30,6 +30,7 @@ class SystemAction extends _$SystemAction {
   }
 
   Future<void> handleExit([bool needSave = true]) {
+    unawaited(SkylinkPrefs.setLastRunning(ref.read(isStartProvider)));
     final coordinator = _exitCoordinator ??= SystemExitCoordinator(
       watchdogDuration: exitWatchdogDuration,
       closeWindow: closeWindow,

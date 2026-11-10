@@ -13,12 +13,14 @@ import 'bootstrap.dart';
 import 'common/app_data.dart';
 import 'common/common.dart';
 import 'common/preferences_store.dart';
+import 'common/skylink_prefs.dart';
 import 'common/window.dart';
 
 void main(List<String> args) {
   runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      launchedAtStartup = args.contains(startupArgument);
       if (Platform.isWindows || Platform.isLinux) {
         SharedPreferencesStorePlatform.instance = AtomicFilePreferencesStore(
           appPath.sharedPreferencesPath,

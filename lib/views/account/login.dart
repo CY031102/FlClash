@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'boarding_pass_login.dart';
+import 'launch_flight.dart';
 
 const _lastAccountKey = 'panelLastAccount';
 const _authDataKey = 'panelAuthData';
@@ -134,4 +135,22 @@ Future<void> markFullFlightShown() async {
   } catch (e) {
     commonPrint.log('save full flight: $e');
   }
+}
+
+/// Only a ban keeps a signed-in user out; offline, blocked or no answer lets
+/// them in on the subscription they already have, which a good answer also
+/// refreshes.
+Future<LaunchVerdict> verifyPanelAccount(WidgetRef ref) async {
+  final authData = await loadPanelAuthData();
+  if (authData == null) return LaunchVerdict.ok;
+  final banned = await PanelApi()
+      .isBanned(authData)
+      .timeout(const Duration(seconds: 6), onTimeout: () => null);
+  if (banned == null) return LaunchVerdict.unknown;
+  if (banned) return LaunchVerdict.denied;
+  final profile = ref.read(currentProfileProvider);
+  if (profile != null) {
+    unawaited(ref.read(profilesActionProvider.notifier).updateProfile(profile));
+  }
+  return LaunchVerdict.ok;
 }

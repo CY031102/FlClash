@@ -16,6 +16,7 @@ const String _methodShow = 'show';
 const String _methodHide = 'hide';
 const String _methodSetTitle = 'setTitle';
 const String _methodOpenMenu = 'openMenu';
+const String _methodNotify = 'notify';
 
 const String _eventIconActivated = 'onIconActivated';
 const String _eventMenuRequested = 'onMenuRequested';
@@ -62,6 +63,20 @@ final class Tray {
 
   Future<void> openMenu() {
     return _serialize(_openMenu);
+  }
+
+  /// A system notification from the tray icon; clicking it activates the
+  /// icon. Only where the icon is shown and the platform offers it.
+  Future<void> notify({required String title, required String body}) {
+    return _serialize(() async {
+      if (!capabilities.notifications || !_isVisible) {
+        return;
+      }
+      await _channel.invokeMethod(_methodNotify, <String, Object?>{
+        'title': title,
+        'body': body,
+      });
+    });
   }
 
   @visibleForTesting

@@ -5,13 +5,18 @@ import 'package:flutter/foundation.dart';
 import 'package:launch_at_startup/launch_at_startup.dart';
 
 import 'constant.dart';
+import 'skylink_prefs.dart';
 import 'system.dart';
 
 class AutoLaunch {
   static AutoLaunch? _instance;
 
   AutoLaunch._internal() {
-    launcher.setup(appName: appName, appPath: Platform.resolvedExecutable);
+    launcher.setup(
+      appName: appName,
+      appPath: Platform.resolvedExecutable,
+      args: const [startupArgument],
+    );
   }
 
   factory AutoLaunch() {
@@ -38,10 +43,11 @@ class AutoLaunch {
     if (kDebugMode) {
       return;
     }
-    if (await isEnable == isAutoLaunch) return;
+    // Re-enabling rewrites an entry an older build registered without the
+    // startup argument.
     if (isAutoLaunch == true) {
       unawaited(enable());
-    } else {
+    } else if (await isEnable) {
       unawaited(disable());
     }
   }
