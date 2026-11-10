@@ -306,10 +306,32 @@ bool TrayPlugin::OpenMenu() {
   POINT cursor;
   ::GetCursorPos(&cursor);
 
+  // Anchored to the work area rather than the cursor, so the taskbar never
+  // covers the end of the menu.
+  UINT align = TPM_BOTTOMALIGN | TPM_LEFTALIGN;
+  POINT anchor = cursor;
+  MONITORINFO monitor{sizeof(MONITORINFO)};
+  if (::GetMonitorInfoW(::MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST),
+                        &monitor)) {
+    const RECT& work = monitor.rcWork;
+    if (cursor.y >= work.bottom) {
+      anchor.y = work.bottom;
+    } else if (cursor.y < work.top) {
+      anchor.y = work.top;
+      align = (align & ~TPM_BOTTOMALIGN) | TPM_TOPALIGN;
+    }
+    if (cursor.x >= work.right) {
+      anchor.x = work.right;
+      align = (align & ~TPM_LEFTALIGN) | TPM_RIGHTALIGN;
+    } else if (cursor.x < work.left) {
+      anchor.x = work.left;
+    }
+  }
+
   ::SetForegroundWindow(window);
   const int command = ::TrackPopupMenu(
-      menu_, TPM_BOTTOMALIGN | TPM_LEFTALIGN | TPM_RETURNCMD | TPM_RIGHTBUTTON,
-      cursor.x, cursor.y, 0, window, nullptr);
+      menu_, align | TPM_RETURNCMD | TPM_RIGHTBUTTON, anchor.x, anchor.y, 0,
+      window, nullptr);
   ::PostMessageW(window, WM_NULL, 0, 0);
 
   if (command != 0) {

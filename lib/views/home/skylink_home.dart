@@ -36,6 +36,16 @@ const _calm = Motion.curve;
 
 enum _Link { off, connecting, connected, trouble }
 
+typedef _HomeView = ({
+  _Link link,
+  String? blocked,
+  ({String text, Color color})? alert,
+  String status,
+  bool lapsed,
+  String node,
+  String account,
+});
+
 /// The whole app for its users: one switch that, on, reaches Google.
 class SkylinkHome extends ConsumerStatefulWidget {
   const SkylinkHome({super.key});
@@ -67,6 +77,7 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
   String _initial = '';
   bool _loggingOut = false;
   bool _awaitingNetwork = false;
+  _HomeView? _frozen;
   final _switchKey = GlobalKey();
   bool _termsOpen = false;
 
@@ -402,6 +413,29 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
     if (mounted) setState(() => _loggingOut = false);
   }
 
+  /// What the screen shows, held still while signing out takes the account
+  /// apart underneath the curtain.
+  _HomeView _view() {
+    final link = _link;
+    final blocked = _blocked;
+    return (
+      link: link,
+      blocked: blocked,
+      alert: _alert(),
+      status: switch (link) {
+        _ when _awaitingNetwork => '等待網路…',
+        _ when blocked != null && link == _Link.off => '無法連線',
+        _Link.off => '未連線',
+        _Link.connecting => '連線中…',
+        _Link.connected => '已連線',
+        _Link.trouble => '連線異常',
+      },
+      lapsed: _expired || _outOfData,
+      node: _nodeLine(),
+      account: _accountLine(),
+    );
+  }
+
   Offset _switchCentre() {
     final box = _switchKey.currentContext?.findRenderObject();
     final home = context.findRenderObject();
@@ -423,18 +457,8 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
   Widget build(BuildContext context) {
     ref.watch(currentProfileProvider);
     ref.watch(groupsProvider);
-    final link = _link;
-    final blocked = _blocked;
-    final alert = _alert();
-    final status = switch (link) {
-      _ when _awaitingNetwork => '等待網路…',
-      _ when blocked != null && link == _Link.off => '無法連線',
-      _Link.off => '未連線',
-      _Link.connecting => '連線中…',
-      _Link.connected => '已連線',
-      _Link.trouble => '連線異常',
-    };
-    final lapsed = _expired || _outOfData;
+    final view = _loggingOut ? _frozen ??= _view() : _frozen = _view();
+    final (:link, :blocked, :alert, :status, :lapsed, :node, :account) = view;
     return ColoredBox(
       color: _C.bg,
       child: DefaultTextStyle(
@@ -501,13 +525,13 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
                       _nodesOpen = !_nodesOpen;
                     }),
                     child: Text(
-                      '${_nodeLine()}  ›',
+                      '$node  ›',
                       style: _style(AppTextStyle.footnote, _C.muted),
                     ),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    _accountLine(),
+                    account,
                     style: _style(AppTextStyle.caption1, _C.faint),
                   ),
                   const SizedBox(height: 18),
