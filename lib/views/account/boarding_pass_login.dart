@@ -6,6 +6,7 @@ import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/providers/providers.dart';
 import 'package:fl_clash/ui/icons/icons.dart';
+import 'package:fl_clash/views/home/skylink_motion.dart';
 import 'package:fl_clash/widgets/widgets.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -663,11 +664,11 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
   }
 
   Widget _buildHeader() {
-    final (color, label) = switch (_server) {
-      _ when networkOffline.value => (_C.danger, offlineMessage),
-      _Server.checking => (_C.warning, '正在檢查伺服器…'),
-      _Server.ok => (_C.success, '伺服器正常'),
-      _Server.down => (_C.danger, '無法連線到伺服器'),
+    final (color, breathing, label) = switch (_server) {
+      _ when networkOffline.value => (_C.danger, true, offlineMessage),
+      _Server.checking => (_C.warning, true, '正在檢查伺服器…'),
+      _Server.ok => (_C.success, false, '伺服器正常'),
+      _Server.down => (_C.danger, false, '無法連線到伺服器'),
     };
     return Positioned(
       left: 22,
@@ -680,11 +681,10 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
             style: _style(AppTextStyle.headline, _C.text, strong: true),
           ),
           const Spacer(),
-          SizedBox.square(
-            dimension: 8,
-            child: DecoratedBox(
-              decoration: ShapeDecoration(color: color, shape: AppShape.circle),
-            ),
+          StatusDot(
+            color: color,
+            breathing: breathing,
+            half: Duration(milliseconds: color == _C.warning ? 1600 : 1000),
           ),
           const SizedBox(width: 7),
           Text(label, style: _style(AppTextStyle.caption1, _C.muted)),

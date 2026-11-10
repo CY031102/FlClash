@@ -12,6 +12,7 @@ import 'package:fl_clash/views/account/logo_data.dart';
 import 'package:fl_clash/views/account/login.dart';
 import 'package:fl_clash/views/disclaimer.dart';
 import 'package:fl_clash/views/home/service_terms.dart';
+import 'package:fl_clash/views/home/skylink_motion.dart';
 import 'package:fl_clash/widgets/widgets.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -31,8 +32,7 @@ abstract final class _C {
   static const warning = Color(0xFFF2B84B);
 }
 
-/// easeInOutSine: every transition on this screen moves on it.
-const _calm = Cubic(0.37, 0, 0.63, 1);
+const _calm = Motion.curve;
 
 enum _Link { off, connecting, connected, trouble }
 
@@ -77,6 +77,18 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
     if (ref.read(isStartProvider)) _onRunning(true);
     launchNotice.addListener(_onLaunchNotice);
     loginGateVisible.addListener(_onGate);
+    HardwareKeyboard.instance.addHandler(_onKey);
+  }
+
+  bool _onKey(KeyEvent event) {
+    if (event is! KeyDownEvent ||
+        event.logicalKey != LogicalKeyboardKey.escape ||
+        loginGateVisible.value ||
+        !(_menuOpen || _nodesOpen || _termsOpen)) {
+      return false;
+    }
+    setState(() => _menuOpen = _nodesOpen = _termsOpen = false);
+    return true;
   }
 
   void _onGate() {
@@ -104,6 +116,7 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
   void dispose() {
     launchNotice.removeListener(_onLaunchNotice);
     loginGateVisible.removeListener(_onGate);
+    HardwareKeyboard.instance.removeHandler(_onKey);
     _ticker.dispose();
     _probeTimer?.cancel();
     _tipTimer?.cancel();
@@ -379,7 +392,7 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
       _Link.connected => '已連線',
       _Link.trouble => '連線異常',
     };
-    final dotColor = _expired || _outOfData ? _C.danger : _C.success;
+    final lapsed = _expired || _outOfData;
     return ColoredBox(
       color: _C.bg,
       child: DefaultTextStyle(
@@ -409,7 +422,7 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
               top: 10,
               child: _Avatar(
                 initial: _initial,
-                dot: dotColor,
+                lapsed: lapsed,
                 onTap: () => setState(() {
                   _nodesOpen = false;
                   _menuOpen = !_menuOpen;
@@ -494,11 +507,13 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
                 ),
               ),
             ),
-            if (_menuOpen)
-              Positioned(
-                right: 16,
-                top: 48,
-                width: 170,
+            Positioned(
+              right: 16,
+              top: 48,
+              width: 170,
+              child: Reveal(
+                visible: _menuOpen,
+                alignment: Alignment.topRight,
                 child: _Panel(
                   children: [
                     _MenuRow('方案與續費', onTap: () => _openSite('plan')),
@@ -519,9 +534,12 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
                   ],
                 ),
               ),
-            if (_nodesOpen)
-              Align(
-                alignment: const Alignment(0, -0.4),
+            ),
+            Align(
+              alignment: const Alignment(0, -0.4),
+              child: Reveal(
+                visible: _nodesOpen,
+                alignment: Alignment.topCenter,
                 child: SizedBox(
                   width: 300,
                   child: _NodeList(
@@ -532,10 +550,17 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
                   ),
                 ),
               ),
-            if (_termsOpen)
-              Positioned.fill(
+            ),
+            Positioned.fill(
+              child: Reveal(
+                visible: _termsOpen,
+                from: 1,
+                slide: const Offset(0, 16),
+                duration: Motion.medium,
+                reverseDuration: Motion.short,
                 child: _Terms(onClose: () => setState(() => _termsOpen = false)),
               ),
+            ),
             if (_loggingOut)
               Positioned.fill(
                 child: AbsorbPointer(
@@ -726,11 +751,17 @@ class _PlanePainter extends CustomPainter {
       old.color != color || old.offset != offset;
 }
 
+/// The light on the avatar: breathing red with no network, steady red when
+/// the plan has lapsed, steady green otherwise.
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.initial, required this.dot, required this.onTap});
+  const _Avatar({
+    required this.initial,
+    required this.lapsed,
+    required this.onTap,
+  });
 
   final String initial;
-  final Color dot;
+  final bool lapsed;
   final VoidCallback onTap;
 
   @override
@@ -760,14 +791,13 @@ class _Avatar extends StatelessWidget {
             Positioned(
               right: -1,
               bottom: -1,
-              child: Container(
-                width: 11,
-                height: 11,
-                decoration: ShapeDecoration(
-                  color: dot,
-                  shape: const CircleBorder(
-                    side: BorderSide(color: _C.bg, width: 2),
-                  ),
+              child: ValueListenableBuilder<bool>(
+                valueListenable: networkOffline,
+                builder: (context, offline, _) => StatusDot(
+                  color: offline || lapsed ? _C.danger : _C.success,
+                  breathing: offline,
+                  dimension: 11,
+                  ring: _C.bg,
                 ),
               ),
             ),
@@ -1029,7 +1059,7 @@ class _Terms extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: ListView(
+            child: SmoothScrollList(
               padding: const EdgeInsets.fromLTRB(22, 6, 22, 22),
               children: [
                 Text('登入即表示你同意以下條款。', style: body),
