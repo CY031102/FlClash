@@ -15,35 +15,36 @@ Future<bool> requestDisclaimerConsent() async {
       false;
 }
 
+/// FlClash's own disclaimer, also shown under 規範聲明 in the home menu.
+List<({String title, String content})> disclaimerTerms(AppLocalizations l) => [
+  (
+    title: l.disclaimerSoftwareTitle,
+    content:
+        '${l.disclaimerSoftwareContent}\n\n${l.disclaimerNoServiceStatement}',
+  ),
+  (title: l.disclaimerUsageTitle, content: l.disclaimerUsageContent),
+  (
+    title: l.disclaimerResponsibilityTitle,
+    content: l.disclaimerResponsibilityContent,
+  ),
+  (
+    title: l.disclaimerThirdPartyTitle,
+    content: l.disclaimerThirdPartyContent,
+  ),
+  (title: l.disclaimerWarrantyTitle, content: l.disclaimerWarrantyContent),
+  (title: l.disclaimerLiabilityTitle, content: l.disclaimerLiabilityContent),
+  (title: l.disclaimerPrivacyTitle, content: l.disclaimerPrivacyContent),
+  (title: l.disclaimerLicenseTitle, content: l.disclaimerLicenseContent),
+  (title: l.disclaimerChangesTitle, content: l.disclaimerChangesContent),
+  (title: l.disclaimerAcceptTitle, content: l.disclaimerAcceptContent),
+];
+
 class DisclaimerView extends StatelessWidget {
   final bool requireConsent;
 
   const DisclaimerView({super.key, this.requireConsent = false});
 
   static const _maxContentWidth = 720.0;
-
-  List<({String title, String content})> _terms(AppLocalizations l) => [
-    (
-      title: l.disclaimerSoftwareTitle,
-      content:
-          '${l.disclaimerSoftwareContent}\n\n${l.disclaimerNoServiceStatement}',
-    ),
-    (title: l.disclaimerUsageTitle, content: l.disclaimerUsageContent),
-    (
-      title: l.disclaimerResponsibilityTitle,
-      content: l.disclaimerResponsibilityContent,
-    ),
-    (
-      title: l.disclaimerThirdPartyTitle,
-      content: l.disclaimerThirdPartyContent,
-    ),
-    (title: l.disclaimerWarrantyTitle, content: l.disclaimerWarrantyContent),
-    (title: l.disclaimerLiabilityTitle, content: l.disclaimerLiabilityContent),
-    (title: l.disclaimerPrivacyTitle, content: l.disclaimerPrivacyContent),
-    (title: l.disclaimerLicenseTitle, content: l.disclaimerLicenseContent),
-    (title: l.disclaimerChangesTitle, content: l.disclaimerChangesContent),
-    (title: l.disclaimerAcceptTitle, content: l.disclaimerAcceptContent),
-  ];
 
   static const _mobileGutter = 16.0;
   static const _desktopGutter = 24.0;
@@ -132,7 +133,7 @@ class DisclaimerView extends StatelessWidget {
   List<Widget> _buildTerms(AppLocalizations appLocalizations) {
     return [
       _DisclaimerIntro(text: appLocalizations.disclaimerDesc),
-      for (final (index, term) in _terms(appLocalizations).indexed)
+      for (final (index, term) in disclaimerTerms(appLocalizations).indexed)
         _DisclaimerTerm(
           index: index + 1,
           title: term.title,

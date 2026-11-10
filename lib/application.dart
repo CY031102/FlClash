@@ -65,6 +65,7 @@ class Application extends ConsumerStatefulWidget {
 class ApplicationState extends ConsumerState<Application> {
   Timer? _autoUpdateProfilesTaskTimer;
   bool _preHasVpn = false;
+  Timer? _offlineTimer;
   // Windows can only watch SIGINT and SIGHUP.
   final _terminateSignals = system.isDesktop && !system.isWindows
       ? ProcessSignal.sigterm.watch()
@@ -84,9 +85,26 @@ class ApplicationState extends ConsumerState<Application> {
       _initLink();
       unawaited(applySkylinkPolicy(ref));
       _promptLoginWhenEmpty();
+      Timer(const Duration(seconds: 3), () async {
+        _updateNetwork(await Connectivity().checkConnectivity());
+      });
       if (!safeModeBuild) {
         unawaited(app?.initShortcuts());
       }
+    });
+  }
+
+  /// A drop shorter than a few seconds, such as a Wi-Fi handover, is not
+  /// worth a warning; coming back clears it at once.
+  void _updateNetwork(List<ConnectivityResult> results) {
+    final offline = results.every((r) => r == ConnectivityResult.none);
+    _offlineTimer?.cancel();
+    if (!offline) {
+      networkOffline.value = false;
+      return;
+    }
+    _offlineTimer = Timer(const Duration(seconds: 3), () {
+      networkOffline.value = true;
     });
   }
 
@@ -143,6 +161,7 @@ class ApplicationState extends ConsumerState<Application> {
     List<ConnectivityResult> results,
   ) async {
     commonPrint.log('connectivityChanged ${results.toString()}');
+    _updateNetwork(results);
     unawaited(systemDnsCoordinator?.resync() ?? Future.value());
     unawaited(ref.read(systemActionProvider.notifier).updateLocalIp());
     final hasVpn = results.contains(ConnectivityResult.vpn);
@@ -189,7 +208,7 @@ class ApplicationState extends ConsumerState<Application> {
           title: appName,
           locale: getLocaleForString(locale) ?? const Locale('zh', 'TW'),
           supportedLocales: AppLocalizations.delegate.supportedLocales,
-          themeMode: themeProps.themeMode,
+          themeMode: ThemeMode.dark,
           theme: watchAppTheme(ref, Brightness.light),
           darkTheme: watchAppTheme(ref, Brightness.dark),
           textScale: textScale.enable ? textScale.scale : null,

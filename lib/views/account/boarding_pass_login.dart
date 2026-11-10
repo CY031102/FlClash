@@ -24,12 +24,23 @@ final loginGateVisible = ValueNotifier<bool>(true);
 /// A line for the home screen to show once the gate has lifted.
 final launchNotice = ValueNotifier<String?>(null);
 
+/// True once the computer has had no Wi-Fi or Ethernet for a few seconds.
+final networkOffline = ValueNotifier<bool>(false);
+
+const offlineMessage = '未連接網路，請檢查 Wi-Fi 或網線';
+
 enum _Gate { pending, login, launch }
 
 final _gate = ValueNotifier<_Gate>(_Gate.pending);
 var _opened = 0;
+var _closable = true;
 
-void openLoginGate() => _open(_Gate.login);
+/// [closable] false when the account in use was refused: going back to it
+/// would only show a home screen that cannot connect.
+void openLoginGate({bool closable = true}) {
+  _closable = closable;
+  _open(_Gate.login);
+}
 
 /// A signed-in user's launch: the short flight while the account is checked.
 void openLaunchFlight() => _open(_Gate.launch);
@@ -143,6 +154,7 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
   bool _loginDone = false;
   String? _loginFailure;
   bool _fullFlown = false;
+  Timer? _serverTimer;
   final _gateNo = () {
     final r = math.Random();
     return '${'ABCDEF'[r.nextInt(6)]}${r.nextInt(30) + 1}';
@@ -154,7 +166,7 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
 
   bool get _busy => _phase != _Phase.idle;
 
-  bool get _canClose => ref.read(profilesProvider).isNotEmpty;
+  bool get _canClose => _closable && ref.read(profilesProvider).isNotEmpty;
 
   @override
   void initState() {
@@ -162,6 +174,16 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
     unawaited(_loadAccount());
     unawaited(_checkServer());
     unawaited(loadFullFlightShown().then((shown) => _fullFlown = shown));
+    _serverTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!_busy) unawaited(_checkServer());
+    });
+    networkOffline.addListener(_onNetwork);
+  }
+
+  void _onNetwork() {
+    if (!mounted) return;
+    setState(() {});
+    if (!networkOffline.value) unawaited(_checkServer());
   }
 
   Future<void> _loadAccount() async {
@@ -178,6 +200,8 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
 
   @override
   void dispose() {
+    _serverTimer?.cancel();
+    networkOffline.removeListener(_onNetwork);
     _ticker.dispose();
     _ink.dispose();
     _email.dispose();
@@ -343,6 +367,7 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
     try {
       final signedIn = await _api.login(email, password);
       await saveLastPanelAccount(email, remember: _remember);
+      await saveSignedInAccount(email);
       await savePanelAuthData(signedIn.authData);
       await importPanelSubscription(ref, signedIn.url);
       ref.read(currentPageLabelProvider.notifier).value = PageLabel.dashboard;
@@ -639,6 +664,7 @@ class _BoardingPassLoginState extends ConsumerState<BoardingPassLogin>
 
   Widget _buildHeader() {
     final (color, label) = switch (_server) {
+      _ when networkOffline.value => (_C.danger, offlineMessage),
       _Server.checking => (_C.warning, '正在檢查伺服器…'),
       _Server.ok => (_C.success, '伺服器正常'),
       _Server.down => (_C.danger, '無法連線到伺服器'),
@@ -1308,7 +1334,7 @@ class _ReturningFlightState extends ConsumerState<_ReturningFlight> {
             _Link(
               text: '改用其他帳號登入',
               style: _style(AppTextStyle.caption1, const Color(0xFF4A5570)),
-              onTap: openLoginGate,
+              onTap: () => openLoginGate(closable: false),
             ),
           ],
         ),

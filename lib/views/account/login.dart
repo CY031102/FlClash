@@ -9,6 +9,7 @@ import 'boarding_pass_login.dart';
 const _lastAccountKey = 'panelLastAccount';
 const _authDataKey = 'panelAuthData';
 const _fullFlightKey = 'fullFlightShown';
+const _signedInKey = 'panelSignedIn';
 
 const panelForgotPasswordUrl = '$panelApiBase/#/forgetPassword';
 
@@ -33,6 +34,34 @@ Future<void> importPanelSubscription(WidgetRef ref, String url) async {
       .firstWhereOrNull((profile) => profile.url == url);
   if (added != null) {
     ref.read(currentProfileIdProvider.notifier).value = added.id;
+  }
+  for (final other in [...ref.read(profilesProvider)]) {
+    if (other.url != url) await profilesAction.deleteProfile(other.id);
+  }
+}
+
+/// The account signed in now, kept apart from the remembered sign-in email
+/// so the avatar shows even when "記住帳號" is off.
+Future<String?> loadSignedInAccount() async {
+  try {
+    final preferences = await SharedPreferences.getInstance();
+    return preferences.getString(_signedInKey);
+  } catch (e) {
+    commonPrint.log('load signed-in account: $e');
+    return null;
+  }
+}
+
+Future<void> saveSignedInAccount(String? email) async {
+  try {
+    final preferences = await SharedPreferences.getInstance();
+    if (email == null) {
+      await preferences.remove(_signedInKey);
+    } else {
+      await preferences.setString(_signedInKey, email);
+    }
+  } catch (e) {
+    commonPrint.log('save signed-in account: $e');
   }
 }
 

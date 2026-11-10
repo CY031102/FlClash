@@ -10,6 +10,8 @@ import 'package:fl_clash/views/account/boarding_pass_login.dart';
 import 'package:fl_clash/views/account/flight_plan.dart';
 import 'package:fl_clash/views/account/logo_data.dart';
 import 'package:fl_clash/views/account/login.dart';
+import 'package:fl_clash/views/disclaimer.dart';
+import 'package:fl_clash/views/home/service_terms.dart';
 import 'package:fl_clash/widgets/widgets.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -63,6 +65,8 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
   String? _tip;
   Timer? _tipTimer;
   String _initial = '';
+  bool _loggingOut = false;
+  bool _termsOpen = false;
 
   @override
   void initState() {
@@ -72,6 +76,11 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
     ref.listenManual(isStartProvider, (_, running) => _onRunning(running));
     if (ref.read(isStartProvider)) _onRunning(true);
     launchNotice.addListener(_onLaunchNotice);
+    loginGateVisible.addListener(_onGate);
+  }
+
+  void _onGate() {
+    if (!loginGateVisible.value) unawaited(_loadInitial());
   }
 
   void _onLaunchNotice() {
@@ -82,15 +91,19 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
   }
 
   Future<void> _loadInitial() async {
-    final email = await loadLastPanelAccount();
-    if (mounted && email != null && email.isNotEmpty) {
-      setState(() => _initial = email.characters.first.toUpperCase());
-    }
+    final email = await loadSignedInAccount() ?? await loadLastPanelAccount();
+    if (!mounted) return;
+    setState(() {
+      _initial = email == null || email.isEmpty
+          ? ''
+          : email.characters.first.toUpperCase();
+    });
   }
 
   @override
   void dispose() {
     launchNotice.removeListener(_onLaunchNotice);
+    loginGateVisible.removeListener(_onGate);
     _ticker.dispose();
     _probeTimer?.cancel();
     _tipTimer?.cancel();
@@ -321,16 +334,27 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
   }
 
   Future<void> _logout() async {
-    setState(() => _menuOpen = false);
-    if (ref.read(isStartProvider)) {
-      await ref.read(setupActionProvider.notifier).setRunning(false);
+    setState(() {
+      _menuOpen = false;
+      _loggingOut = true;
+    });
+    final shown = Future<void>.delayed(const Duration(milliseconds: 900));
+    try {
+      if (ref.read(isStartProvider)) {
+        await ref.read(setupActionProvider.notifier).setRunning(false);
+      }
+      final profilesAction = ref.read(profilesActionProvider.notifier);
+      for (final profile in [...ref.read(profilesProvider)]) {
+        await profilesAction.deleteProfile(profile.id);
+      }
+      await savePanelAuthData(null);
+      await saveSignedInAccount(null);
+    } catch (e) {
+      commonPrint.log('logout: $e');
     }
-    final profilesAction = ref.read(profilesActionProvider.notifier);
-    for (final profile in [...ref.read(profilesProvider)]) {
-      await profilesAction.deleteProfile(profile.id);
-    }
-    await savePanelAuthData(null);
+    await shown;
     openLoginGate();
+    if (mounted) setState(() => _loggingOut = false);
   }
 
   void _openSite(String path) {
@@ -449,14 +473,24 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
               left: 0,
               right: 0,
               bottom: 14,
-              child: AnimatedOpacity(
-                opacity: _tip == null ? 0 : 1,
-                duration: const Duration(milliseconds: 400),
-                curve: _calm,
-                child: Text(
-                  _tip ?? '',
-                  textAlign: TextAlign.center,
-                  style: _style(AppTextStyle.caption1, _C.faint),
+              child: ValueListenableBuilder<bool>(
+                valueListenable: networkOffline,
+                builder: (context, offline, tip) => offline
+                    ? Text(
+                        offlineMessage,
+                        textAlign: TextAlign.center,
+                        style: _style(AppTextStyle.caption1, _C.warning),
+                      )
+                    : tip!,
+                child: AnimatedOpacity(
+                  opacity: _tip == null ? 0 : 1,
+                  duration: const Duration(milliseconds: 400),
+                  curve: _calm,
+                  child: Text(
+                    _tip ?? '',
+                    textAlign: TextAlign.center,
+                    style: _style(AppTextStyle.caption1, _C.faint),
+                  ),
                 ),
               ),
             ),
@@ -474,6 +508,14 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
                       color: _C.danger,
                       onTap: () => unawaited(_logout()),
                     ),
+                    _MenuRow(
+                      '規範聲明',
+                      color: _C.muted,
+                      onTap: () => setState(() {
+                        _menuOpen = false;
+                        _termsOpen = true;
+                      }),
+                    ),
                   ],
                 ),
               ),
@@ -487,6 +529,38 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
                     current: _global?.now,
                     onAuto: _pickAuto,
                     onPick: _pickNode,
+                  ),
+                ),
+              ),
+            if (_termsOpen)
+              Positioned.fill(
+                child: _Terms(onClose: () => setState(() => _termsOpen = false)),
+              ),
+            if (_loggingOut)
+              Positioned.fill(
+                child: AbsorbPointer(
+                  child: ColoredBox(
+                    color: _C.bg,
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '正在登出…',
+                            style: _style(
+                              AppTextStyle.headline,
+                              _C.text,
+                              strong: true,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '正在斷開連線並清除訂閱',
+                            style: _style(AppTextStyle.footnote, _C.muted),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -890,6 +964,87 @@ class _NodeList extends StatelessWidget {
                   ],
                 ],
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// ATCSkylink's terms, which signing in accepts, then FlClash's disclaimer
+/// and the notice its licence asks a modified copy to carry.
+class _Terms extends StatelessWidget {
+  const _Terms({required this.onClose});
+
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = AppTextStyle.headline
+        .of(context, emphasized: true)
+        .copyWith(color: _C.text);
+    final heading = AppTextStyle.footnote
+        .of(context, emphasized: true)
+        .copyWith(color: _C.text);
+    final body = AppTextStyle.caption1.of(context).copyWith(color: _C.muted);
+    final section = AppTextStyle.caption2
+        .of(context)
+        .copyWith(color: _C.accent, letterSpacing: 1);
+    Widget term(({String title, String content}) t) => Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(t.title, style: heading),
+          const SizedBox(height: 4),
+          Text(t.content, style: body),
+        ],
+      ),
+    );
+    return ColoredBox(
+      color: _C.bg,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(22, 14, 18, 8),
+            child: Row(
+              children: [
+                Text('規範聲明', style: title),
+                const Spacer(),
+                _Pressable(
+                  onTap: onClose,
+                  child: Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: Text(
+                      '關閉',
+                      style: AppTextStyle.footnote
+                          .of(context)
+                          .copyWith(color: _C.accent),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(22, 6, 22, 22),
+              children: [
+                Text('登入即表示你同意以下條款。', style: body),
+                const SizedBox(height: 14),
+                for (final t in serviceTerms) term(t),
+                const SizedBox(height: 6),
+                Text('FLCLASH 免責聲明', style: section),
+                const SizedBox(height: 10),
+                for (final t in disclaimerTerms(currentAppLocalizations))
+                  term(t),
+                const SizedBox(height: 6),
+                Text('開源說明', style: section),
+                const SizedBox(height: 10),
+                Text(openSourceNotice, style: body),
+              ],
             ),
           ),
         ],

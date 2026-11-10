@@ -226,11 +226,9 @@ class Bootstrap {
     await _container.read(systemActionProvider.notifier).handleExit(false);
   }
 
-  /// Unattended desktop installs, such as a container nobody watches, accept
-  /// up front: the core only starts after the disclaimer is accepted.
-  bool get _isDisclaimerAcceptedByEnvironment =>
-      system.isDesktop &&
-      Platform.environment['FLCLASH_ACCEPT_DISCLAIMER'] == '1';
+  /// Signing in to ATCSkylink accepts its terms, which carry this
+  /// disclaimer under 規範聲明, so desktop does not ask before the core starts.
+  bool get _isDisclaimerAcceptedByEnvironment => system.isDesktop;
 
   /// Android's exit only finishes the activity, so Dart keeps running after
   /// [SystemAction.handleExit] returns and must not go on to start the app.
