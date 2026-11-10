@@ -35,11 +35,14 @@ enum _Gate { pending, login, launch }
 final _gate = ValueNotifier<_Gate>(_Gate.pending);
 var _opened = 0;
 var _closable = true;
+var _rise = false;
 
 /// [closable] false when the account in use was refused: going back to it
-/// would only show a home screen that cannot connect.
-void openLoginGate({bool closable = true}) {
+/// would only show a home screen that cannot connect. [rise] slides the
+/// boarding pass up over a sign-out.
+void openLoginGate({bool closable = true, bool rise = false}) {
   _closable = closable;
+  _rise = rise;
   _open(_Gate.login);
 }
 
@@ -75,11 +78,14 @@ class LoginGate extends StatelessWidget {
               child: switch (_gate.value) {
                 _Gate.pending => const ColoredBox(color: _C.bg),
                 _Gate.launch => _ReturningFlight(key: ValueKey(_opened)),
-                _Gate.login => Overlay(
+                _Gate.login => _Rise(
                   key: ValueKey(_opened),
-                  initialEntries: [
-                    OverlayEntry(builder: (_) => const BoardingPassLogin()),
-                  ],
+                  rise: _rise,
+                  child: Overlay(
+                    initialEntries: [
+                      OverlayEntry(builder: (_) => const BoardingPassLogin()),
+                    ],
+                  ),
                 ),
               },
             ),
@@ -1339,6 +1345,26 @@ class _ReturningFlightState extends ConsumerState<_ReturningFlight> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _Rise extends StatelessWidget {
+  const _Rise({super.key, required this.rise, required this.child});
+
+  final bool rise;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!rise) return child;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 1, end: 0),
+      duration: const Duration(milliseconds: 650),
+      curve: const Cubic(0.2, 0.8, 0.3, 1),
+      builder: (context, v, child) =>
+          FractionalTranslation(translation: Offset(0, v), child: child),
+      child: child,
     );
   }
 }

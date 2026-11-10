@@ -146,13 +146,15 @@ class AppTray implements TrayPort {
       },
     );
 
+    final signedIn = read(profilesProvider).isNotEmpty;
     return [
       showItem,
-      TrayMenuAction(
-        label: trayState.isStart ? '斷開' : '連線',
-        detail: shortcut(HotAction.start),
-        onSelected: commonAction.toggleRunning,
-      ),
+      if (signedIn || trayState.isStart)
+        TrayMenuAction(
+          label: trayState.isStart ? '斷開' : '連線',
+          detail: shortcut(HotAction.start),
+          onSelected: commonAction.toggleRunning,
+        ),
       const TrayMenuSeparator(),
       TrayMenuCheckbox(
         label: '開機自啟動',

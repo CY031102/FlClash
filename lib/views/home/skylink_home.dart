@@ -66,6 +66,8 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
   Timer? _tipTimer;
   String _initial = '';
   bool _loggingOut = false;
+  bool _awaitingNetwork = false;
+  final _switchKey = GlobalKey();
   bool _termsOpen = false;
 
   @override
@@ -78,6 +80,26 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
     launchNotice.addListener(_onLaunchNotice);
     loginGateVisible.addListener(_onGate);
     HardwareKeyboard.instance.addHandler(_onKey);
+    networkOffline.addListener(_onNetwork);
+  }
+
+  /// Losing the network really disconnects, so the screen never claims a
+  /// connection there is not; the app reconnects once the network is back
+  /// unless the user turns it off meanwhile.
+  void _onNetwork() {
+    final setup = ref.read(setupActionProvider.notifier);
+    if (networkOffline.value) {
+      if (!ref.read(isStartProvider)) return;
+      setState(() => _awaitingNetwork = true);
+      unawaited(setup.setRunning(false));
+      return;
+    }
+    if (!_awaitingNetwork) return;
+    setState(() => _awaitingNetwork = false);
+    if (ref.read(profilesProvider).isNotEmpty && !loginGateVisible.value) {
+      setState(() => _link = _Link.connecting);
+      unawaited(setup.setRunning(true));
+    }
   }
 
   bool _onKey(KeyEvent event) {
@@ -117,6 +139,7 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
     launchNotice.removeListener(_onLaunchNotice);
     loginGateVisible.removeListener(_onGate);
     HardwareKeyboard.instance.removeHandler(_onKey);
+    networkOffline.removeListener(_onNetwork);
     _ticker.dispose();
     _probeTimer?.cancel();
     _tipTimer?.cancel();
@@ -192,6 +215,11 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
 
   Future<void> _toggle() async {
     if (_toggling) return;
+    if (_awaitingNetwork) {
+      setState(() => _awaitingNetwork = false);
+      _showTip('已取消自動連線');
+      return;
+    }
     if (_blocked != null) {
       _showTip(_blocked!);
       return;
@@ -349,9 +377,11 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
   Future<void> _logout() async {
     setState(() {
       _menuOpen = false;
+      _nodesOpen = false;
+      _awaitingNetwork = false;
       _loggingOut = true;
     });
-    final shown = Future<void>.delayed(const Duration(milliseconds: 900));
+    final shown = Future<void>.delayed(const Duration(milliseconds: 2400));
     try {
       if (ref.read(isStartProvider)) {
         await ref.read(setupActionProvider.notifier).setRunning(false);
@@ -366,8 +396,19 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
       commonPrint.log('logout: $e');
     }
     await shown;
-    openLoginGate();
+    unawaited(ref.read(systemActionProvider.notifier).updateTray());
+    openLoginGate(rise: true);
+    await Future<void>.delayed(const Duration(milliseconds: 700));
     if (mounted) setState(() => _loggingOut = false);
+  }
+
+  Offset _switchCentre() {
+    final box = _switchKey.currentContext?.findRenderObject();
+    final home = context.findRenderObject();
+    if (box is! RenderBox || home is! RenderBox) {
+      return const Offset(320, 150);
+    }
+    return box.localToGlobal(box.size.center(Offset.zero), ancestor: home);
   }
 
   void _openSite(String path) {
@@ -386,6 +427,7 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
     final blocked = _blocked;
     final alert = _alert();
     final status = switch (link) {
+      _ when _awaitingNetwork => '等待網路…',
       _ when blocked != null && link == _Link.off => '無法連線',
       _Link.off => '未連線',
       _Link.connecting => '連線中…',
@@ -435,6 +477,7 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _Switch(
+                    key: _switchKey,
                     link: link,
                     disabled: blocked != null,
                     seconds: _seconds,
@@ -564,29 +607,7 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
             if (_loggingOut)
               Positioned.fill(
                 child: AbsorbPointer(
-                  child: ColoredBox(
-                    color: _C.bg,
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            '正在登出…',
-                            style: _style(
-                              AppTextStyle.headline,
-                              _C.text,
-                              strong: true,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '正在斷開連線並清除訂閱',
-                            style: _style(AppTextStyle.footnote, _C.muted),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                  child: _LogoutCurtain(centre: _switchCentre()),
                 ),
               ),
           ],
@@ -624,6 +645,7 @@ String? regionOf(String name) {
 
 class _Switch extends StatelessWidget {
   const _Switch({
+    super.key,
     required this.link,
     required this.disabled,
     required this.seconds,
@@ -1081,4 +1103,140 @@ class _Terms extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Sign-out runs the launch backwards: the dark gathers back into the plane,
+/// leaving the light sky the flight is drawn on while the account is let go.
+class _LogoutCurtain extends StatefulWidget {
+  const _LogoutCurtain({required this.centre});
+
+  final Offset centre;
+
+  @override
+  State<_LogoutCurtain> createState() => _LogoutCurtainState();
+}
+
+class _LogoutCurtainState extends State<_LogoutCurtain>
+    with SingleTickerProviderStateMixin {
+  static const _sky = Color(0xFFE9EEF5);
+  static const _ink = Color(0xFF191D2B);
+  static const _soft = Color(0xFF4A5570);
+
+  late final _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1250),
+  )..forward();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  double _between(double ms, double from, double length) =>
+      ((ms - from) / length).clamp(0.0, 1.0);
+
+  @override
+  Widget build(BuildContext context) {
+    final title = AppTextStyle.headline
+        .of(context, emphasized: true)
+        .copyWith(color: _ink);
+    final note = AppTextStyle.footnote.of(context).copyWith(color: _soft);
+    return LayoutBuilder(
+      builder: (context, box) => AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          final ms = _controller.value * 1250;
+          final cover = Motion.curve.transform(_between(ms, 0, 300));
+          final gather = const Cubic(
+            0.55,
+            0,
+            0.35,
+            1,
+          ).transform(_between(ms, 250, 800));
+          final words = Motion.curve.transform(_between(ms, 850, 400));
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _CurtainPainter(
+                    centre: widget.centre,
+                    cover: cover,
+                    gather: gather,
+                  ),
+                ),
+              ),
+              Center(
+                child: Opacity(
+                  opacity: words,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('正在登出…', style: title),
+                      const SizedBox(height: 8),
+                      Text('正在斷開連線並清除訂閱', style: note),
+                      const SizedBox(height: 14),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (var i = 0; i < 3; i++) ...[
+                            if (i > 0) const SizedBox(width: 6),
+                            StatusDot(
+                              color: _soft,
+                              breathing: words > 0,
+                              half: Duration(milliseconds: 600 + i * 120),
+                              dimension: 6,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _CurtainPainter extends CustomPainter {
+  const _CurtainPainter({
+    required this.centre,
+    required this.cover,
+    required this.gather,
+  });
+
+  final Offset centre;
+  final double cover;
+  final double gather;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final reach = [
+      centre,
+      Offset(size.width - centre.dx, centre.dy),
+      Offset(centre.dx, size.height - centre.dy),
+      Offset(size.width - centre.dx, size.height - centre.dy),
+    ].map((o) => o.distance).reduce(math.max);
+    if (gather > 0) {
+      canvas.drawRect(
+        Offset.zero & size,
+        Paint()..color = _LogoutCurtainState._sky,
+      );
+    }
+    canvas.drawCircle(
+      centre,
+      reach * (1 - gather),
+      Paint()..color = _C.bg.withValues(alpha: gather > 0 ? 1 : cover),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_CurtainPainter oldDelegate) =>
+      oldDelegate.cover != cover ||
+      oldDelegate.gather != gather ||
+      oldDelegate.centre != centre;
 }

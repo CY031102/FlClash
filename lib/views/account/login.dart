@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:collection/collection.dart';
 import 'package:fl_clash/common/common.dart';
 import 'package:fl_clash/providers/providers.dart';
@@ -38,6 +40,7 @@ Future<void> importPanelSubscription(WidgetRef ref, String url) async {
   for (final other in [...ref.read(profilesProvider)]) {
     if (other.url != url) await profilesAction.deleteProfile(other.id);
   }
+  unawaited(ref.read(systemActionProvider.notifier).updateTray());
 }
 
 /// The account signed in now, kept apart from the remembered sign-in email

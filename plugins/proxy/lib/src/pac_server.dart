@@ -50,6 +50,10 @@ class PacServer {
     return '''
 function FindProxyForURL(url, host) {
   if (isPlainHostName(host)) return "DIRECT";
+  if (dnsDomainIs(host, ".local") || dnsDomainIs(host, ".lan") ||
+      dnsDomainIs(host, ".internal") || dnsDomainIs(host, ".home.arpa")) {
+    return "DIRECT";
+  }
 $rules  return "PROXY 127.0.0.1:$port; DIRECT";
 }
 ''';
