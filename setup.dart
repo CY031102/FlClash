@@ -131,6 +131,9 @@ const _panelDefineKeys = ['PANEL_URL', 'PANEL_SUBSCRIBE_URL'];
 Map<String, String> createBuildEnvironment(String env) {
   return {
     'APP_ENV': env,
+    if (Platform.environment['GITHUB_RUN_NUMBER']?.trim() case final run?
+        when run.isNotEmpty)
+      'APP_BUILD': run,
     for (final key in _panelDefineKeys)
       if (Platform.environment[key]?.trim() case final value?
           when value.isNotEmpty)

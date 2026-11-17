@@ -18,6 +18,7 @@ import 'package:fl_clash/views/home/keep_state_prompt.dart';
 import 'package:fl_clash/views/home/service_terms.dart';
 import 'package:fl_clash/views/home/skylink_motion.dart';
 import 'package:fl_clash/widgets/widgets.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -84,6 +85,7 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
   _HomeView? _frozen;
   bool _guide = false;
   bool _keepLastState = false;
+  String _version = '';
   bool _hover = false;
   final _switchKey = GlobalKey();
   bool _termsOpen = false;
@@ -148,10 +150,12 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
   Future<void> _loadPrefs() async {
     final guide = !await SkylinkPrefs.connectGuideDone();
     final keep = await SkylinkPrefs.keepLastState();
+    final info = await PackageInfo.fromPlatform();
     if (!mounted) return;
     setState(() {
       _guide = guide;
       _keepLastState = keep;
+      _version = 'v${info.version}${appBuild.isEmpty ? '' : ' ($appBuild)'}';
     });
   }
 
@@ -684,9 +688,13 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
                       color: _C.danger,
                       onTap: () => unawaited(_logout()),
                     ),
+                  ],
+                  about: [
+                    _AboutHeader(version: _version),
+                    const _UpdateRow(),
                     _MenuRow(
                       '規範聲明',
-                      color: _C.muted,
+                      trailing: true,
                       onTap: () => setState(() {
                         _menuOpen = false;
                         _termsOpen = true;
@@ -1130,40 +1138,46 @@ class _AvatarMenu extends StatefulWidget {
     required this.items,
     required this.footer,
     required this.settings,
+    required this.about,
   });
 
   final bool open;
   final List<Widget> items;
   final List<Widget> footer;
   final List<Widget> settings;
+  final List<Widget> about;
 
   @override
   State<_AvatarMenu> createState() => _AvatarMenuState();
 }
 
+enum _MenuPage { main, settings, about }
+
 class _AvatarMenuState extends State<_AvatarMenu> {
-  bool _settings = false;
+  _MenuPage _page = _MenuPage.main;
 
   @override
   void didUpdateWidget(_AvatarMenu oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.open && !oldWidget.open) _settings = false;
+    if (widget.open && !oldWidget.open) _page = _MenuPage.main;
   }
 
   @override
   Widget build(BuildContext context) {
     final label = AppTextStyle.footnote.of(context);
-    Widget page(double width, List<Widget> children) => SizedBox(
-      key: ValueKey(width),
-      width: width,
+    Widget page(_MenuPage key, List<Widget> children) => SizedBox(
+      key: ValueKey(key),
+      width: 188,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: children,
       ),
     );
-    Widget nav(bool forward) => _Pressable(
-      onTap: () => setState(() => _settings = forward),
+    Widget nav(String title, _MenuPage to, {Color color = _C.text}) {
+      final forward = to != _MenuPage.main;
+      return _Pressable(
+      onTap: () => setState(() => _page = to),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
         child: Row(
@@ -1174,9 +1188,9 @@ class _AvatarMenuState extends State<_AvatarMenu> {
             ],
             Expanded(
               child: Text(
-                '設定',
+                title,
                 style: forward
-                    ? label.copyWith(color: _C.text)
+                    ? label.copyWith(color: color)
                     : AppTextStyle.footnote
                           .of(context, emphasized: true)
                           .copyWith(color: _C.text),
@@ -1192,6 +1206,7 @@ class _AvatarMenuState extends State<_AvatarMenu> {
         ),
       ),
     );
+    }
     return DecoratedBox(
       decoration: ShapeDecoration(color: _C.surface, shape: AppShape.all(14)),
       child: Padding(
@@ -1208,18 +1223,25 @@ class _AvatarMenuState extends State<_AvatarMenu> {
               alignment: Alignment.topRight,
               children: [...previous, ?current],
             ),
-            child: _settings
-                ? page(188.5, [
-                    nav(false),
-                    const _MenuDivider(),
-                    ...widget.settings,
-                  ])
-                : page(188, [
-                    ...widget.items,
-                    nav(true),
-                    const _MenuDivider(),
-                    ...widget.footer,
-                  ]),
+            child: switch (_page) {
+              _MenuPage.settings => page(_MenuPage.settings, [
+                nav('設定', _MenuPage.main),
+                const _MenuDivider(),
+                ...widget.settings,
+              ]),
+              _MenuPage.about => page(_MenuPage.about, [
+                nav('關於 App', _MenuPage.main),
+                const _MenuDivider(),
+                ...widget.about,
+              ]),
+              _MenuPage.main => page(_MenuPage.main, [
+                ...widget.items,
+                nav('設定', _MenuPage.settings),
+                const _MenuDivider(),
+                ...widget.footer,
+                nav('關於 App', _MenuPage.about, color: _C.muted),
+              ]),
+            },
           ),
         ),
       ),
@@ -1314,12 +1336,118 @@ class _CheckRow extends StatelessWidget {
   }
 }
 
+class _AboutHeader extends StatelessWidget {
+  const _AboutHeader({required this.version});
+
+  final String version;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      child: Row(
+        children: [
+          SizedBox.square(
+            dimension: 30,
+            child: DecoratedBox(
+              decoration: ShapeDecoration(
+                color: _C.accent,
+                shape: AppShape.all(9),
+              ),
+              child: const Padding(
+                padding: EdgeInsets.all(6),
+                child: CustomPaint(painter: _LogoPlanePainter()),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                brandName,
+                style: AppTextStyle.footnote
+                    .of(context, emphasized: true)
+                    .copyWith(color: _C.text),
+              ),
+              Text(
+                version.isEmpty ? '' : '版本 $version',
+                style: AppTextStyle.caption2
+                    .of(context)
+                    .copyWith(color: _C.muted),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LogoPlanePainter extends CustomPainter {
+  const _LogoPlanePainter();
+
+  static final _plane = parseOutline(logoPlanePath);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bounds = _plane.getBounds();
+    final scale = size.width / bounds.longestSide;
+    canvas
+      ..translate(
+        (size.width - bounds.width * scale) / 2,
+        (size.height - bounds.height * scale) / 2,
+      )
+      ..scale(scale)
+      ..translate(-bounds.left, -bounds.top)
+      ..drawPath(_plane, Paint()..color = _C.bg);
+  }
+
+  @override
+  bool shouldRepaint(_LogoPlanePainter oldDelegate) => false;
+}
+
+/// Where the update check will sit once there is a site to publish builds
+/// to; until then it says so instead of pretending to look.
+class _UpdateRow extends StatelessWidget {
+  const _UpdateRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '檢查更新',
+            style: AppTextStyle.footnote.of(context).copyWith(color: _C.faint),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '發佈網站確定後開放',
+            style: AppTextStyle.caption2.of(context).copyWith(color: _C.faint),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _MenuRow extends StatelessWidget {
-  const _MenuRow(this.text, {required this.onTap, this.color = _C.text});
+  const _MenuRow(
+    this.text, {
+    required this.onTap,
+    this.color = _C.text,
+    this.trailing = false,
+  });
 
   final String text;
   final VoidCallback onTap;
   final Color color;
+
+  /// A chevron saying the row opens a page.
+  final bool trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -1327,9 +1455,21 @@ class _MenuRow extends StatelessWidget {
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        child: Text(
-          text,
-          style: AppTextStyle.footnote.of(context).copyWith(color: color),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                text,
+                style: AppTextStyle.footnote.of(context).copyWith(color: color),
+              ),
+            ),
+            if (trailing)
+              const GlyphIcon(
+                AppGlyphs.chevronForward,
+                size: 14,
+                color: _C.muted,
+              ),
+          ],
         ),
       ),
     );
@@ -1387,10 +1527,6 @@ class _NodeList extends StatelessWidget {
                               '自動選擇',
                               style: row.copyWith(color: _C.text),
                             ),
-                          ),
-                          Text(
-                            '同地區優先',
-                            style: row.copyWith(color: _C.accent),
                           ),
                         ],
                       ),

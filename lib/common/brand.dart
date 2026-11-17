@@ -5,6 +5,10 @@ const _productionSubscribe = 'https://api.bakaclient.org';
 
 /// V2Board panel the login screen signs in to. A test build sets PANEL_URL;
 /// every other build signs in to production.
+/// The CI run that built this copy, shown beside the version so a report can
+/// name the exact build; empty in local builds.
+const appBuild = String.fromEnvironment('APP_BUILD');
+
 const panelApiBase = String.fromEnvironment(
   'PANEL_URL',
   defaultValue: _productionPanel,

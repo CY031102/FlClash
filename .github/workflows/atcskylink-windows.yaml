@@ -102,18 +102,24 @@ jobs:
           "### Build (exit $code)`n``````n$(((Get-Content build.txt) | Select-Object -Last 120) -join "`n")`n``````" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           exit $code
 
-      - name: Mark test build
-        if: env.BUILD_SUFFIX != ''
+      # The packager names files after FlClash and the bare version; ours
+      # carry the stage (v0.2.0-dev) and say which build is the installer.
+      - name: Name the build
         shell: pwsh
         run: |
-          Get-ChildItem dist -Recurse -Include *.exe,*.zip |
-            Rename-Item -NewName { $_.BaseName + $env:BUILD_SUFFIX + $_.Extension }
-          "### Test build for $env:PANEL_URL" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          $version = (Select-String -Path pubspec.yaml -Pattern '^version:\s*([^+\s]+)').Matches[0].Groups[1].Value
+          "APP_VERSION=v$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Get-ChildItem dist -Recurse -Include *.exe,*.zip | ForEach-Object {
+            $kind = if ($_.Extension -eq '.exe') { 'setup' } else { 'portable' }
+            Rename-Item $_.FullName -NewName "ATCSkylink-v$version-windows-$kind$env:BUILD_SUFFIX$($_.Extension)"
+          }
+          "### ATCSkylink v$version (build $env:GITHUB_RUN_NUMBER)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          if ($env:BUILD_SUFFIX) { "Test build for $env:PANEL_URL" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8 }
 
       - name: Upload build
         uses: actions/upload-artifact@v4
         with:
-          name: ATCSkylink-windows${{ env.BUILD_SUFFIX }}
+          name: ATCSkylink-${{ env.APP_VERSION }}-build${{ github.run_number }}-windows${{ env.BUILD_SUFFIX }}
           path: |
             dist/**/*.exe
             dist/**/*.zip
