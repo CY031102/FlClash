@@ -14,6 +14,7 @@ import 'package:fl_clash/views/account/flight_plan.dart';
 import 'package:fl_clash/views/account/logo_data.dart';
 import 'package:fl_clash/views/account/login.dart';
 import 'package:fl_clash/views/disclaimer.dart';
+import 'package:fl_clash/views/home/keep_state_prompt.dart';
 import 'package:fl_clash/views/home/service_terms.dart';
 import 'package:fl_clash/views/home/skylink_motion.dart';
 import 'package:fl_clash/widgets/widgets.dart';
@@ -667,36 +668,16 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
             Positioned(
               right: 16,
               top: 48,
-              width: 236,
               child: Reveal(
                 visible: _menuOpen,
                 alignment: Alignment.topRight,
-                child: _Panel(
-                  children: [
+                child: _AvatarMenu(
+                  open: _menuOpen,
+                  items: [
                     _MenuRow('方案與續費', onTap: () => _openSite('plan')),
                     _MenuRow('客服', onTap: () => _openSite('ticket')),
-                    const _MenuDivider(),
-                    _CheckRow(
-                      '開機自啟動',
-                      note: '電腦開機後自動打開 $brandName，停在工作列角落',
-                      checked: ref.watch(
-                        appSettingProvider.select((s) => s.autoLaunch),
-                      ),
-                      onTap: ref
-                          .read(systemActionProvider.notifier)
-                          .updateAutoLaunch,
-                    ),
-                    _CheckRow(
-                      '保持最後狀態',
-                      note: '退出時是什麼狀態，下次打開就回到什麼狀態',
-                      checked: _keepLastState,
-                      onTap: () {
-                        setState(() => _keepLastState = !_keepLastState);
-                        unawaited(SkylinkPrefs.setKeepLastState(_keepLastState));
-                        unawaited(SkylinkPrefs.markKeepLastStateAsked());
-                      },
-                    ),
-                    const _MenuDivider(),
+                  ],
+                  footer: [
                     _MenuRow(
                       '登出',
                       color: _C.danger,
@@ -709,6 +690,28 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
                         _menuOpen = false;
                         _termsOpen = true;
                       }),
+                    ),
+                  ],
+                  settings: [
+                    _CheckRow(
+                      '開機自啟動',
+                      note: '電腦開機後自動打開，\n停在工作列角落',
+                      checked: ref.watch(
+                        appSettingProvider.select((s) => s.autoLaunch),
+                      ),
+                      onTap: ref
+                          .read(systemActionProvider.notifier)
+                          .updateAutoLaunch,
+                    ),
+                    _CheckRow(
+                      '保持最後狀態',
+                      note: '退出時是什麼狀態，\n下次打開就回到什麼狀態',
+                      checked: _keepLastState,
+                      onTap: () {
+                        setState(() => _keepLastState = !_keepLastState);
+                        unawaited(SkylinkPrefs.setKeepLastState(_keepLastState));
+                        unawaited(SkylinkPrefs.markKeepLastStateAsked());
+                      },
                     ),
                   ],
                 ),
@@ -738,6 +741,25 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
                 duration: Motion.medium,
                 reverseDuration: Motion.short,
                 child: _Terms(onClose: () => setState(() => _termsOpen = false)),
+              ),
+            ),
+            Positioned.fill(
+              child: ValueListenableBuilder<Completer<bool>?>(
+                valueListenable: keepStateQuestion,
+                builder: (context, question, _) => Reveal(
+                  visible: question != null,
+                  from: 0.97,
+                  duration: Motion.medium,
+                  child: KeepStatePrompt(
+                    initial: _initial,
+                    onAnswer: (keep) {
+                      if (keep) setState(() => _keepLastState = true);
+                      if (question != null && !question.isCompleted) {
+                        question.complete(keep);
+                      }
+                    },
+                  ),
+                ),
               ),
             ),
             if (_loggingOut)
@@ -1094,6 +1116,110 @@ class _Panel extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: children,
+        ),
+      ),
+    );
+  }
+}
+
+/// The avatar's menu; 設定 slides the same panel over to its switches.
+class _AvatarMenu extends StatefulWidget {
+  const _AvatarMenu({
+    required this.open,
+    required this.items,
+    required this.footer,
+    required this.settings,
+  });
+
+  final bool open;
+  final List<Widget> items;
+  final List<Widget> footer;
+  final List<Widget> settings;
+
+  @override
+  State<_AvatarMenu> createState() => _AvatarMenuState();
+}
+
+class _AvatarMenuState extends State<_AvatarMenu> {
+  bool _settings = false;
+
+  @override
+  void didUpdateWidget(_AvatarMenu oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.open && !oldWidget.open) _settings = false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final label = AppTextStyle.footnote.of(context);
+    Widget page(double width, List<Widget> children) => SizedBox(
+      key: ValueKey(width),
+      width: width,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
+      ),
+    );
+    Widget nav(bool forward) => _Pressable(
+      onTap: () => setState(() => _settings = forward),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        child: Row(
+          children: [
+            if (!forward) ...[
+              const GlyphIcon(AppGlyphs.chevronBack, size: 14, color: _C.muted),
+              const SizedBox(width: 6),
+            ],
+            Expanded(
+              child: Text(
+                '設定',
+                style: forward
+                    ? label.copyWith(color: _C.text)
+                    : AppTextStyle.footnote
+                          .of(context, emphasized: true)
+                          .copyWith(color: _C.text),
+              ),
+            ),
+            if (forward)
+              const GlyphIcon(
+                AppGlyphs.chevronForward,
+                size: 14,
+                color: _C.muted,
+              ),
+          ],
+        ),
+      ),
+    );
+    return DecoratedBox(
+      decoration: ShapeDecoration(color: _C.surface, shape: AppShape.all(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(6),
+        child: AnimatedSize(
+          duration: Motion.medium,
+          curve: _calm,
+          alignment: Alignment.topRight,
+          child: AnimatedSwitcher(
+            duration: Motion.short,
+            switchInCurve: _calm,
+            switchOutCurve: _calm,
+            layoutBuilder: (current, previous) => Stack(
+              alignment: Alignment.topRight,
+              children: [...previous, ?current],
+            ),
+            child: _settings
+                ? page(240, [
+                    nav(false),
+                    const _MenuDivider(),
+                    ...widget.settings,
+                  ])
+                : page(170, [
+                    ...widget.items,
+                    nav(true),
+                    const _MenuDivider(),
+                    ...widget.footer,
+                  ]),
+          ),
         ),
       ),
     );

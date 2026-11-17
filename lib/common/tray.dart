@@ -1,13 +1,13 @@
+import 'dart:async';
+
 import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/models/models.dart';
 import 'package:fl_clash/providers/providers.dart';
 import 'package:fl_clash/views/account/boarding_pass_login.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
-import 'package:flutter/painting.dart' show TextSpan;
 import 'package:tray/tray.dart';
 
 import 'app_localizations.dart';
-import 'dialog.dart';
 import 'app_ports.dart';
 import 'constant.dart';
 import 'keyboard.dart';
@@ -178,21 +178,17 @@ class AppTray implements TrayPort {
     required ProviderReader read,
   }) async {
     final systemAction = read(systemActionProvider.notifier);
-    if (trayState.isStart && !await SkylinkPrefs.keepLastStateAsked()) {
+    if (trayState.isStart &&
+        !loginGateVisible.value &&
+        keepStateQuestion.value == null &&
+        !await SkylinkPrefs.keepLastStateAsked()) {
       await SkylinkPrefs.markKeepLastStateAsked();
       await window?.show();
-      final keep = await dialogs.showMessage(
-        title: '下次打開時自動連線？',
-        message: const TextSpan(
-          text:
-              '現在是已連線的狀態。開啟「保持最後狀態」後，退出時是什麼狀態，'
-              '下次打開 ATCSkylink 就會回到什麼狀態。\n\n'
-              '以後可以點右上角的頭像修改。',
-        ),
-        confirmText: '開啟',
-        cancelText: '不用了',
-      );
-      if (keep == true) await SkylinkPrefs.setKeepLastState(true);
+      final question = Completer<bool>();
+      keepStateQuestion.value = question;
+      final keep = await question.future;
+      keepStateQuestion.value = null;
+      if (keep) await SkylinkPrefs.setKeepLastState(true);
     }
     await systemAction.handleExit();
   }

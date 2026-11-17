@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'print.dart';
@@ -53,3 +56,7 @@ abstract final class SkylinkPrefs {
 bool launchedAtStartup = false;
 
 const startupArgument = '--autostart';
+
+/// Set by the tray's exit while it waits for the home screen to ask whether
+/// to keep the last state; completes with the answer.
+final keepStateQuestion = ValueNotifier<Completer<bool>?>(null);
