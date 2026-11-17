@@ -94,6 +94,7 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
     unawaited(_loadInitial());
     unawaited(_loadPrefs());
     ref.listenManual(isStartProvider, (_, running) => _onRunning(running));
+    ref.listenManual(groupsProvider, (_, _) => _ensureRoute());
     if (ref.read(isStartProvider)) _onRunning(true);
     launchNotice.addListener(_onLaunchNotice);
     loginGateVisible.addListener(_onGate);
@@ -200,7 +201,42 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
     }
     setState(() => _link = _Link.connecting);
     _failures = 0;
+    _ensureRoute();
     unawaited(_probe(_probeRun));
+  }
+
+  static const _noRoute = {'Direct', 'Reject', 'RejectDrop', 'Pass', 'Compatible'};
+
+  /// Whether traffic leaves through a node. A new subscription starts with
+  /// GLOBAL on DIRECT, which reaches Google from anywhere Google is not
+  /// blocked and so would pass for a connection.
+  bool get _routed {
+    final global = _global;
+    final now = global?.now;
+    if (global == null || now == null || now.isEmpty) return false;
+    final picked = global.all.where((p) => p.name == now).firstOrNull;
+    return picked != null && !_noRoute.contains(picked.type);
+  }
+
+  /// Moves GLOBAL off DIRECT and its kind: onto the subscription's automatic
+  /// group when it has one, else its first node.
+  void _ensureRoute() {
+    if (!ref.read(isStartProvider) || _routed) return;
+    final all = _global?.all ?? const <Proxy>[];
+    final target =
+        all
+            .where((p) => p.type == 'URLTest' || p.type == 'Fallback')
+            .firstOrNull ??
+        _nodes().firstOrNull;
+    if (target == null) return;
+    unawaited(
+      ref
+          .read(proxiesActionProvider.notifier)
+          .changeProxy(groupName: GroupName.GLOBAL.name, proxyName: target.name)
+          .then(
+            (_) => ref.read(proxiesActionProvider.notifier).updateGroupsDebounce(),
+          ),
+    );
   }
 
   /// Through our own proxy, so "connected" means the user can reach Google.
@@ -225,6 +261,10 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
       client.close(force: true);
     }
     if (!mounted || run != _probeRun || !ref.read(isStartProvider)) return;
+    if (ok && !_routed) {
+      ok = false;
+      _ensureRoute();
+    }
     if (ok) {
       final wasConnecting = _link == _Link.connecting;
       _failures = 0;
@@ -395,6 +435,7 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
     final now = global?.now;
     if (now == null || now.isEmpty) return '自動';
     final picked = global!.all.where((p) => p.name == now).firstOrNull;
+    if (picked != null && _noRoute.contains(picked.type)) return '自動';
     if (picked != null && _notNodes.contains(picked.type)) {
       final inner = picked.now;
       final region = inner == null ? null : regionOf(inner);
@@ -416,10 +457,11 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
     final auto = _global?.all
         .where((p) => p.type == 'URLTest' || p.type == 'Fallback')
         .firstOrNull;
-    if (auto != null) {
+    final target = auto ?? _nodes().firstOrNull;
+    if (target != null) {
       ref
           .read(proxiesActionProvider.notifier)
-          .changeProxyDebounce(GroupName.GLOBAL.name, auto.name);
+          .changeProxyDebounce(GroupName.GLOBAL.name, target.name);
     }
     _showTip('自動選擇');
   }
