@@ -60,6 +60,10 @@ void liftPendingGate() {
   if (_gate.value == _Gate.pending) loginGateVisible.value = false;
 }
 
+/// Set when a launch finds the account refused, so nothing reconnects it
+/// behind a later sign-in.
+var accountRefused = false;
+
 var _pendingDenied = false;
 var _deniedHeld = false;
 
@@ -1306,7 +1310,9 @@ class _ReturningFlightState extends ConsumerState<_ReturningFlight> {
   @override
   void initState() {
     super.initState();
-    _verdict.ignore();
+    _verdict.then((verdict) {
+      if (verdict == LaunchVerdict.denied) accountRefused = true;
+    }).ignore();
     _deniedHeld = false;
   }
 

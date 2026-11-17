@@ -121,7 +121,30 @@ class ApplicationState extends ConsumerState<Application> {
       unawaited(_startInTray());
     } else {
       openLaunchFlight();
+      unawaited(_resumeWhenLanded());
     }
+  }
+
+  Future<bool> get _shouldResume async =>
+      await SkylinkPrefs.keepLastState() && await SkylinkPrefs.lastRunning();
+
+  void _connect() {
+    if (ref.read(isStartProvider) || ref.read(profilesProvider).isEmpty) return;
+    ref.read(commonActionProvider.notifier).toggleRunning();
+  }
+
+  /// Keep-last-state on an ordinary launch: reconnects once the flight has
+  /// landed on the home screen, and not at all if the account was refused.
+  Future<void> _resumeWhenLanded() async {
+    if (!await _shouldResume) return;
+    void landed() {
+      if (loginGateVisible.value) return;
+      loginGateVisible.removeListener(landed);
+      if (!accountRefused && !networkOffline.value) _connect();
+    }
+
+    loginGateVisible.addListener(landed);
+    landed();
   }
 
   /// Started by Windows at sign-in: no window and no flight, only a
@@ -136,11 +159,9 @@ class ApplicationState extends ConsumerState<Application> {
       );
       return;
     }
-    final resume =
-        await SkylinkPrefs.keepLastState() && await SkylinkPrefs.lastRunning();
-    if (resume && !networkOffline.value) {
+    if (await _shouldResume && !networkOffline.value) {
       startupReport.value = true;
-      await ref.read(setupActionProvider.notifier).setRunning(true);
+      _connect();
       return;
     }
     await appTray?.notify(

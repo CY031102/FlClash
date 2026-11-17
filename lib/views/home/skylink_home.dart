@@ -111,6 +111,7 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
     if (networkOffline.value) {
       if (!ref.read(isStartProvider)) return;
       setState(() => _awaitingNetwork = true);
+      unawaited(SkylinkPrefs.setLastRunning(true));
       unawaited(setup.setRunning(false));
       return;
     }
