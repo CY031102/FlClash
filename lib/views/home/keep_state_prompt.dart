@@ -1,4 +1,5 @@
 import 'package:fl_clash/common/brand.dart';
+import 'package:fl_clash/ui/icons/icons.dart';
 import 'package:fl_clash/widgets/widgets.dart';
 import 'package:flutter/widgets.dart';
 
@@ -136,8 +137,8 @@ class _DemonstrationState extends State<_Demonstration>
   static const _height = 124.0;
   static const _start = Offset(84, 92);
   static const _avatar = Offset(283, 22);
-  static const _settings = Offset(214, 94);
-  static const _tick = Offset(165, 94);
+  static const _settings = Offset(238, 94);
+  static const _tick = Offset(183, 94);
 
   late final _controller = AnimationController(
     vsync: this,
@@ -343,6 +344,9 @@ class _MiniMenu extends StatelessWidget {
             side: BorderSide(color: on ? _P.accent : _P.muted, width: 1.2),
           ),
         ),
+        child: on
+            ? const GlyphIcon(AppGlyphs.check, size: 8, color: _P.bg)
+            : null,
       ),
     );
     final first = Column(
@@ -362,7 +366,7 @@ class _MiniMenu extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(4),
         child: SizedBox(
-          width: 120 + 30 * page,
+          width: 124,
           child: Stack(
             children: [
               Opacity(opacity: 1 - page, child: first),

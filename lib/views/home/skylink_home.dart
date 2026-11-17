@@ -1208,12 +1208,12 @@ class _AvatarMenuState extends State<_AvatarMenu> {
               children: [...previous, ?current],
             ),
             child: _settings
-                ? page(240, [
+                ? page(188.5, [
                     nav(false),
                     const _MenuDivider(),
                     ...widget.settings,
                   ])
-                : page(170, [
+                : page(188, [
                     ...widget.items,
                     nav(true),
                     const _MenuDivider(),
