@@ -546,6 +546,13 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
     ref.watch(groupsProvider);
     final view = _loggingOut ? _frozen ??= _view() : _frozen = _view();
     final (:link, :blocked, :alert, :status, :lapsed, :node, :account) = view;
+    final waiting = status.endsWith('…');
+    final guiding = _guide && link == _Link.off && blocked == null;
+    final statusStyle = _style(
+      AppTextStyle.title2,
+      link == _Link.trouble ? _C.warning : _C.text,
+      strong: true,
+    );
     return ColoredBox(
       color: _C.bg,
       child: DefaultTextStyle(
@@ -600,31 +607,42 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
                     onTap: () => unawaited(_toggle()),
                   ),
                   const SizedBox(height: 30),
-                  Text(
-                    status,
-                    style: _style(
-                      AppTextStyle.title2,
-                      link == _Link.trouble ? _C.warning : _C.text,
-                      strong: true,
-                    ),
+                  BreathText(
+                    text: waiting
+                        ? status.substring(0, status.length - 1)
+                        : status,
+                    style: statusStyle,
+                    tail: waiting ? WaitingDots(style: statusStyle) : null,
                   ),
                   const SizedBox(height: 8),
-                  if (_guide && link == _Link.off && blocked == null)
-                    Text(
-                      '點一下飛機開始連線',
-                      style: _style(AppTextStyle.footnote, _C.accent),
-                    )
-                  else
-                    _Pressable(
+                  IgnorePointer(
+                    ignoring: guiding,
+                    child: _Pressable(
                       onTap: () => setState(() {
                         _menuOpen = false;
                         _nodesOpen = !_nodesOpen;
                       }),
-                      child: Text(
-                        '$node  ›',
-                        style: _style(AppTextStyle.footnote, _C.muted),
+                      child: BreathText(
+                        text: guiding ? '點一下飛機開始連線' : node,
+                        style: _style(
+                          AppTextStyle.footnote,
+                          guiding ? _C.accent : _C.muted,
+                        ),
+                        tail: guiding
+                            ? null
+                            : Padding(
+                                padding: const EdgeInsets.only(left: 6),
+                                child: Text(
+                                  '›',
+                                  style: _style(
+                                    AppTextStyle.footnote,
+                                    _C.muted,
+                                  ),
+                                ),
+                              ),
                       ),
                     ),
+                  ),
                   const SizedBox(height: 6),
                   Text(
                     account,
@@ -694,7 +712,6 @@ class _SkylinkHomeState extends ConsumerState<SkylinkHome>
                     const _UpdateRow(),
                     _MenuRow(
                       '規範聲明',
-                      trailing: true,
                       onTap: () => setState(() {
                         _menuOpen = false;
                         _termsOpen = true;
@@ -1196,12 +1213,6 @@ class _AvatarMenuState extends State<_AvatarMenu> {
                           .copyWith(color: _C.text),
               ),
             ),
-            if (forward)
-              const GlyphIcon(
-                AppGlyphs.chevronForward,
-                size: 14,
-                color: _C.muted,
-              ),
           ],
         ),
       ),
@@ -1435,19 +1446,11 @@ class _UpdateRow extends StatelessWidget {
 }
 
 class _MenuRow extends StatelessWidget {
-  const _MenuRow(
-    this.text, {
-    required this.onTap,
-    this.color = _C.text,
-    this.trailing = false,
-  });
+  const _MenuRow(this.text, {required this.onTap, this.color = _C.text});
 
   final String text;
   final VoidCallback onTap;
   final Color color;
-
-  /// A chevron saying the row opens a page.
-  final bool trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -1455,21 +1458,9 @@ class _MenuRow extends StatelessWidget {
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                text,
-                style: AppTextStyle.footnote.of(context).copyWith(color: color),
-              ),
-            ),
-            if (trailing)
-              const GlyphIcon(
-                AppGlyphs.chevronForward,
-                size: 14,
-                color: _C.muted,
-              ),
-          ],
+        child: Text(
+          text,
+          style: AppTextStyle.footnote.of(context).copyWith(color: color),
         ),
       ),
     );

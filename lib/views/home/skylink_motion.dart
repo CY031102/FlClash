@@ -251,3 +251,162 @@ class _SmoothScrollListState extends State<SmoothScrollList> {
     );
   }
 }
+
+/// Centres [child] as if [tail] were not there; the tail hangs off its right
+/// edge, so "連線中" sits under the switch whatever follows it.
+class Hanging extends StatelessWidget {
+  const Hanging({super.key, required this.child, this.tail});
+
+  final Widget child;
+  final Widget? tail;
+
+  @override
+  Widget build(BuildContext context) {
+    final tail = this.tail;
+    if (tail == null) return child;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        child,
+        Positioned.fill(
+          child: FractionalTranslation(
+            translation: const Offset(1, 0),
+            child: Align(alignment: Alignment.centerLeft, child: tail),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Text that changes like a breath: it dims, becomes the new words at its
+/// faintest, and brightens again, never moving.
+class BreathText extends StatefulWidget {
+  const BreathText({
+    super.key,
+    required this.text,
+    required this.style,
+    this.tail,
+  });
+
+  final String text;
+  final TextStyle style;
+  final Widget? tail;
+
+  @override
+  State<BreathText> createState() => _BreathTextState();
+}
+
+class _BreathTextState extends State<BreathText>
+    with SingleTickerProviderStateMixin {
+  static const _dim = Duration(milliseconds: 260);
+  static const _rise = Duration(milliseconds: 420);
+  static const _floor = 0.12;
+
+  late final _controller = AnimationController(vsync: this, value: 1);
+  late String _text = widget.text;
+  late TextStyle _style = widget.style;
+  late Widget? _tail = widget.tail;
+  bool _dimming = false;
+
+  @override
+  void didUpdateWidget(BreathText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.text == _text) {
+      _style = widget.style;
+      _tail = widget.tail;
+      return;
+    }
+    if (_dimming) return;
+    _dimming = true;
+    _controller.animateTo(0, duration: _dim, curve: Motion.curve).whenComplete(
+      () {
+        if (!mounted) return;
+        setState(() {
+          _dimming = false;
+          _text = widget.text;
+          _style = widget.style;
+          _tail = widget.tail;
+        });
+        _controller.animateTo(1, duration: _rise, curve: Motion.curve);
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) => Opacity(
+        opacity: _floor + (1 - _floor) * _controller.value,
+        child: child,
+      ),
+      child: Hanging(tail: _tail, child: Text(_text, style: _style)),
+    );
+  }
+}
+
+/// Three dots that light one after another, then start over.
+class WaitingDots extends StatefulWidget {
+  const WaitingDots({super.key, required this.style});
+
+  final TextStyle style;
+
+  @override
+  State<WaitingDots> createState() => _WaitingDotsState();
+}
+
+class _WaitingDotsState extends State<WaitingDots>
+    with SingleTickerProviderStateMixin {
+  static const _stepMs = 450.0;
+  static const _fadeMs = 400.0;
+  static const _faint = 0.15;
+
+  late final _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1800),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  double _opacity(int dot, double ms) {
+    final on = (dot + 1) * _stepMs;
+    final k = ms >= on
+        ? ((ms - on) / _fadeMs).clamp(0.0, 1.0)
+        : 1 - (ms / _fadeMs).clamp(0.0, 1.0);
+    return _faint + (1 - _faint) * Motion.curve.transform(k);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.style.color ?? const Color(0xFFFFFFFF);
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final ms = _controller.value * 1800;
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < 3; i++)
+              Text(
+                '.',
+                style: widget.style.copyWith(
+                  color: color.withValues(alpha: _opacity(i, ms)),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
